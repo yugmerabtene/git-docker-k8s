@@ -1,184 +1,193 @@
-# Chapitre-01 — Images Docker
+# Chapitre-01 — Images Docker (version enrichie, **pas-à-pas**)
 
-## Objectifs d’apprentissage
+> Objectif : repartir des bases **avec méthode** et t’amener jusqu’à des images **propres, traçables, reproductibles et prêtes prod** (tags + digest), tout en comprenant *exactement* ce que Docker manipule.
 
-* Comprendre le **modèle OCI** : couches (layers), manifeste, digest, index multi-architecture.
-* Savoir **nommer**, **tirer** (pull), **construire** (build), **taguer**, **publier** (push) et **nettoyer** des images.
-* Savoir **inspecter** (metadata, couches), **analyser l’historique**, **sauvegarder/restaurer** des images.
-* Mettre en place des **bonnes pratiques** de taille, de reproductibilité et de gouvernance (tags vs digests).
+---
 
-## Pré-requis
+## Objectifs d’apprentissage (affinés)
 
-* Docker Engine/CLI opérationnel.
-* Bases Linux (shell), notions réseau (utile pour les registres).
+* Comprendre le **modèle OCI** (layers, manifeste, digest, index multi-arch) et savoir **lire** ces infos.
+* Savoir **nommer** correctement une image, **tirer** (`pull`), **construire** (`build`), **taguer**, **publier** (`push`) et **nettoyer**.
+* Savoir **inspecter** (métadonnées / couches), **lire l’historique**, **sauvegarder/restaurer** (save/load vs export/import).
+* Appliquer les bonnes pratiques : **.dockerignore**, **multi-stage**, **labels OCI**, **USER non-root**, **pinning**, **digest** en déploiement.
+
+---
+
+## Pré-requis & vérifications rapides
+
+```bash
+docker version            # client/serveur
+docker info               # storage driver, cgroup driver, etc.
+docker system df          # occupation disque (images/containers/volumes)
+```
+
+> Si tu es sur Windows, assure-toi que **WSL2** est activé et que Docker Desktop utilise WSL2.
+
+---
+
+## Plan d’apprentissage (étapes)
+
+1. **Concepts OCI** → 2) **Nommage** → 3) **Lister / chercher** → 4) **Tirer** →
+2. **Construire** → 6) **Tagger & pousser** → 7) **Inspecter / history** →
+3. **Save/Load vs Export/Import** → 9) **Multi-arch** → 10) **Nettoyage** →
+4. **Bonnes pratiques** → 12) **Parcours guidé** → 13) **FAQ & erreurs** → 14) **Checklist**
 
 ---
 
 ## 1) Concepts fondamentaux (OCI)
 
-* **Image** : empilement de **couches** en lecture seule (layers), immuable.
-* **Manifeste** : description d’une image (config + liste des couches).
-* **Digest** : empreinte SHA-256 du manifeste (`sha256:…`) ⇒ identifiant **immuable**.
-* **Tag** : alias **mutable** (ex. `:1.4`, `:latest`) pointant vers un digest.
-* **Index (manifest list)** : pointeur multi-arch (ex. `linux/amd64`, `linux/arm64`).
+* **Image** : empilement de **couches** en lecture seule (layers). Chaque instruction Dockerfile produit (souvent) une couche.
+* **Manifeste** : JSON décrivant **config** + **liste des couches**.
+* **Digest** : empreinte **SHA-256** du manifeste → identifiant **immuable** (`@sha256:…`).
+* **Tag** : alias **mutable** (ex. `:1.4.2`, `:stable`, `:latest`) → pratique mais **non garanti**.
+* **Index (manifest list)** : “pointeur” vers plusieurs manifestes (amd64, arm64, …) pour une même **référence**.
+
+👉 Une *référence d’image* peut être un **tag** (`repo:1.4.2`) *ou* un **digest** (`repo@sha256:…`). En production, **préférer le digest**.
 
 ---
 
 ## 2) Nommage correct d’une image
 
-**Grammaire :**
-`[REGISTRY_HOST[:PORT]]/[NAMESPACE]/REPOSITORY[:TAG]` *ou* `@[DIGEST]`
+**Grammaire**
 
-**Exemples :**
+```
+[REGISTRY[:PORT]]/[NAMESPACE]/REPOSITORY[:TAG]   ou   [ ... ]@[DIGEST]
+```
 
-* `ubuntu:22.04` (registre par défaut : Docker Hub, namespace implicite `library/`).
-* `ghcr.io/monorg/monapp:web` (GitHub Container Registry).
-* `registry.example.com/team/api@sha256:…` (par **digest** ⇒ immuable).
+**Exemples**
 
-**Règles utiles :**
+* `ubuntu:22.04` → registre **Docker Hub** implicite + namespace `library/`.
+* `ghcr.io/monorg/monapp:web` → GitHub Container Registry.
+* `registry.example.com/team/api@sha256:deadbeef…` → par **digest** (immutabilité).
 
-* Le tag par défaut est `:latest` **uniquement** si tag omis.
-* Utiliser le **digest** pour déployer en prod (immutabilité).
-* Garder des **tags sémantiques** (SemVer : `1.4.2`) et des **canaux** (`1.4`, `stable`, `rc`) pour l’humain.
+**Règles utiles**
+
+* Si tu omets `:tag`, Docker suppose `:latest` (⚠️ **éviter** en prod).
+* **Minuscules** et noms concis.
+* **SemVer** : `1.4.2` + canaux (`1.4`, `rc`, `stable`) pour le confort humain ; **digest** pour déployer.
 
 ---
 
-## 3) Suite “docker image …” (panorama + options clés)
-
-### 3.1 Lister
+## 3) Lister / filtrer / chercher
 
 ```bash
-docker image ls                  # alias: docker images
+# Lister images locales
+docker image ls                       # alias: docker images
 docker image ls --digests
 docker image ls --filter dangling=true
-docker image ls --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}'
+docker image ls --filter reference='ghcr.io/monorg/*'
+docker image ls --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}' | sort
 ```
 
-**Options utiles :**
+> `dangling=true` = couches “orphelines” (tags supprimés).
+> `--format` accepte les **Go templates** pour extraire des champs précis.
 
-* `--all` (inclure les images intermédiaires)
-* `--filter reference=pattern` (ex. `myrepo:*`)
-* `--digests` (afficher les digests)
-
-### 3.2 Tirer (pull)
+Recherche (Docker Hub uniquement) :
 
 ```bash
-docker image pull nginx
-docker image pull --platform linux/arm64 nginx:1.27
-docker image pull --all-tags alpine
+docker search nginx --limit 15
 ```
 
-**Options clés :**
+---
 
-* `--platform` : tirer une variante spécifique (si multi-arch).
-* `--all-tags` : tirer **tous** les tags du repo demandé.
-
-### 3.3 Construire (build)
-
-> CH-05 couvre la construction avancée ; ici, **bases nécessaires** au chapitre Images.
+## 4) Tirer (pull) des images
 
 ```bash
-docker image build -t myapp:1.0 .
-docker image build -t myapp:1.0 -f Dockerfile.prod .
-docker image build --no-cache --pull -t myapp:clean .
+docker pull nginx:1.27
+docker pull --platform linux/arm64 nginx:1.27   # variante ARM64 si index multi-arch
+docker pull --all-tags alpine                    # ⚠️ tire *tous* les tags du repo 'alpine'
 ```
 
-**Options clés :**
+**Points d’attention**
 
-* `-t` : nommage (repo:tag)
-* `-f` : chemin du Dockerfile
-* `--build-arg KEY=VAL` : paramètre de build
-* `--no-cache` : ignorer le cache de build
-* `--pull` : forcer la mise à jour de l’image de base
-* `--platform` : construire pour une arch (via Buildx pour multi-arch réel)
+* `--platform` **tire** une variante spécifique. Pour **exécuter** une arch différente de la tienne, il faut l’émulation (QEMU/binfmt).
+* `--all-tags` peut télécharger **beaucoup** de données : utilise-le avec précaution.
 
-### 3.4 Taguer
+---
+
+## 5) Construire (build) — bases indispensables
+
+> Le chapitre “Dockerfile & Build” couvre le détail. Ici, on pose le **minimum vital**.
 
 ```bash
-docker image tag myapp:1.0 registry.example.com/prod/myapp:1.0
-docker image tag myapp:1.0 myapp:stable
+# Build avec tag
+docker build -t myapp:1.0 .
+
+# Dockerfile alternatif
+docker build -t myapp:1.0 -f Dockerfile.prod .
+
+# Build propre (ignore cache, rafraîchit l’image de base)
+docker build --no-cache --pull -t myapp:clean .
 ```
 
-* Un **tag** est un **pointeur mutable** vers un digest.
+**Options clés**
 
-### 3.5 Pousser (push)
+* `-t repo:tag` : nommage.
+* `-f` : chemin Dockerfile.
+* `--build-arg KEY=VAL` : variables **ARG** du Dockerfile.
+* `--pull` : rafraîchit l’image de base.
+* `--platform` : cible d’arch (multi-arch réel via **Buildx**).
+
+**.dockerignore** (exemple)
+
+```
+.git
+node_modules
+target
+__pycache__/
+*.log
+```
+
+---
+
+## 6) Tagger & pousser (push)
 
 ```bash
+# Ajouter des tags
+docker tag myapp:1.0 registry.example.com/prod/myapp:1.0
+docker tag myapp:1.0 myapp:stable
+
+# Authentification et push
 docker login registry.example.com
-docker image push registry.example.com/prod/myapp:1.0
+docker push registry.example.com/prod/myapp:1.0
 ```
 
-* Exige des **droits** sur le registre.
-* **Conseil** : poussez des tags **versionnés**, pas seulement `latest`.
+> **Astuce** : publie **toujours** un tag **versionné** (SemVer). Tu pourras **déployer par digest**.
 
-### 3.6 Inspecter (inspect)
+---
+
+## 7) Inspecter & lire l’historique
+
+**Inspect**
 
 ```bash
-docker image inspect myapp:1.0
-docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' myapp:1.0
+docker image inspect myapp:1.0 | jq '.[0].Id, .[0].Os, .[0].Architecture'
 docker image inspect --format '{{json .RootFS.Layers}}' myapp:1.0 | jq
+docker image inspect --format '{{json .Config.Labels}}' myapp:1.0 | jq
 ```
 
-* Accès aux **métadonnées**, couches, labels, config.
-
-### 3.7 Historique (history)
+**Historique**
 
 ```bash
 docker image history myapp:1.0
 docker image history --no-trunc myapp:1.0
 ```
 
-* Visualise les **instructions** à l’origine des couches et leurs tailles.
-
-### 3.8 Sauvegarder / Restaurer (save/load)
-
-```bash
-docker image save myapp:1.0 > myapp.tar
-docker image load < myapp.tar
-```
-
-* **Transport** d’images entre hôtes **sans** registre.
-
-### 3.9 Importer depuis un tar rootfs (import) — différent de save/load
-
-```bash
-cat rootfs.tar | docker image import - mybase:raw
-```
-
-* Crée une image à partir d’un **système de fichiers** (perd la meta d’historique).
-
-### 3.10 Supprimer & nettoyer
-
-```bash
-docker image rm myapp:old
-docker image prune           # supprime les images "dangling" (sans tag)
-docker system df             # espace disque (images/containers/volumes)
-docker system prune -a       # agressif : tout ce qui n’est pas référencé
-```
-
-* `rm` échoue si l’image est **utilisée** par un conteneur (même arrêté) ; supprimer d’abord le conteneur.
+> `history` révèle les **instructions** (RUN/COPY/…) et la **taille** par couche.
+> Utile pour **optimiser** (fusionner RUN, nettoyer caches) et **auditer** ce qui compose l’image.
 
 ---
 
-## 4) Commandes “classiques” alias de `docker image …`
+## 8) Sauvegarder/Restaurer vs Exporter/Importer
 
-* `docker images`  ≡ `docker image ls`
-* `docker rmi`     ≡ `docker image rm`
-* `docker pull`    ≡ `docker image pull`
-* `docker push`    ≡ `docker image push`
-* `docker build`   ≡ `docker image build`
-* `docker history` ≡ `docker image history`
-* `docker inspect` ≡ `docker image inspect`
-* `docker save`/`docker load` idem.
+**Images** (avec métadonnées OCI) :
 
----
+```bash
+docker save ghcr.io/acme/api:1.4.2 > api_1.4.2.tar
+docker load < api_1.4.2.tar
+```
 
-## 5) Différence **save/load** vs **export/import**
-
-* **save/load** (images) : conserve **manifeste + couches + config**. Parfait pour **transporter** une image OCI complète.
-* **export/import** (conteneurs → image) : `docker export` capture un **rootfs** conteneur, puis `docker import` en fait une image **sans l’historique ni metadata**.
-
-**Exemple :**
+**Rootfs d’un conteneur** (sans l’historique Dockerfile) :
 
 ```bash
 docker create --name t ubuntu:22.04 sleep infinity
@@ -186,164 +195,208 @@ docker export t > rootfs.tar
 cat rootfs.tar | docker import - ubuntu:min
 ```
 
----
-
-## 6) Multi-architecture (aperçu indispensable)
-
-* Les images “officielles” modernes publient un **index** multi-arch.
-* `docker pull --platform linux/arm64 node:20` tire la variante **arm64**.
-* `docker inspect --format '{{.Architecture}}' node:20` vérifie la cible.
-
-> La **construction** multi-arch (Buildx, QEMU/binfmt) est détaillée en CH-05/CH-11.
+> `save/load` ≠ `export/import` : le premier conserve le **manifeste + layers**, le second **aplati** un rootfs en **une** image (sans historique).
 
 ---
 
-## 7) Bonnes pratiques de **construction** (niveau “images”)
+## 9) Multi-architecture (aperçu utile)
 
-*(Le détail avancé est en CH-05 ; voici les indispensables pour CH-01.)*
-
-* **.dockerignore** : exclure `node_modules`, `target`, `.git`, etc.
-* **Multi-stage** : builder → runtime (réduire la taille, surface d’attaque).
-* **Pinning** : fixer versions (apt/yum/apk, langages, OS base).
-* **Nettoyage** dans la même couche :
-
-  ```Dockerfile
-  RUN apt-get update && apt-get install -y curl \
-      && rm -rf /var/lib/apt/lists/*
-  ```
-* **USER** non-root si possible : `USER 10001:10001`.
-* **Labels OCI** pour la traçabilité :
-
-  ```Dockerfile
-  LABEL org.opencontainers.image.source="https://github.com/org/app" \
-        org.opencontainers.image.version="1.4.2" \
-        org.opencontainers.image.revision="abc1234"
-  ```
-
----
-
-## 8) Gouvernance des **tags** & digests
-
-* **Tags sémantiques** : `1.4.2` (patch), `1.4` (minor), `1` (major).
-* **Canaux** : `dev`, `rc`, `stable`.
-* Éviter d’**écraser** un tag prod existant (politique d’**immutabilité** souhaitable).
-* Déployer par **digest** (ex. `myapp@sha256:…`) pour une reproductibilité totale.
-* Mettre en place des **politiques de rétention** et de nettoyage (cf. Annexe C du syllabus).
-
----
-
-## 9) Exemples courants (pas-à-pas)
-
-### 9.1 Tirer une image précise par digest
+* Les images modernes publient un **index** multi-arch.
+* Tu peux voir quelle arch est tirée :
 
 ```bash
-# 1) On récupère d’abord l’image et on repère son digest
-docker pull nginx:1.27
-docker image inspect --format '{{index .RepoDigests 0}}' nginx:1.27
-# 2) On consomme par digest (immutable)
-docker run -d --name web nginx@sha256:<digest>
+docker pull node:20
+docker image inspect --format '{{.Os}}/{{.Architecture}}' node:20
 ```
 
-### 9.2 Construire et pousser une image versionnée
+* Inspection d’un **index** (via Buildx) :
 
 ```bash
-# Build local
-docker build -t ghcr.io/acme/api:1.4.2 .
-
-# (si besoin) Login
-echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-
-# Push
-docker push ghcr.io/acme/api:1.4.2
+docker buildx imagetools inspect nginx:1.27
 ```
 
-### 9.3 Lister les images “dangling” et nettoyer
+---
+
+## 10) Nettoyage & gestion d’espace
 
 ```bash
 docker image ls --filter dangling=true
-docker image prune -f
+docker image prune -f                # supprime dangling
+docker system df                     # récapitulatif espace
+docker system prune -a               # ⚠️ agressif : supprime tout ce qui n’est pas référencé
 ```
 
-### 9.4 Sauvegarder et restaurer une image sur un autre hôte
-
-```bash
-docker save ghcr.io/acme/api:1.4.2 > api_1.4.2.tar
-# scp api_1.4.2.tar user@remote:/tmp/
-ssh user@remote 'docker load < /tmp/api_1.4.2.tar'
-```
-
-### 9.5 Extraire des infos ciblées (Go templates)
-
-```bash
-# ID, OS/ARCH, taille
-docker image inspect myapp:1.0 \
-  --format 'ID={{.Id}} OS/ARCH={{.Os}}/{{.Architecture}} Size={{.Size}}'
-
-# Liste des couches en JSON
-docker image inspect myapp:1.0 --format '{{json .RootFS.Layers}}' | jq
-```
+> Si `rm` échoue : l’image est **utilisée** par au moins un conteneur (même arrêté). Supprime d’abord le conteneur.
 
 ---
 
-## 10) “Do & Don’t” rapides
+## 11) Bonnes pratiques (niveau image)
 
-**Do**
+* **Pinning** : versions OS/paquets/langages **fixées** (idéalement par **digest** de base).
+* **Multi-stage** : une phase “build” lourde → une **runtime** **minimale**.
+* **Nettoyage dans la même couche** :
 
-* Pinner les versions et les bases d’images.
-* Nettoyer les caches (apt/apk/npm) **dans la même couche**.
-* Utiliser `.dockerignore`.
-* Publier des **tags versionnés** + un **digest** pour la prod.
-* Documenter vos **labels OCI** (source, version, révision).
+  ```Dockerfile
+  RUN apk add --no-cache curl \
+   && rm -rf /var/cache/apk/*
+  ```
+* **USER non-root** :
 
-**Don’t**
+  ```Dockerfile
+  RUN adduser -D -u 10001 app
+  USER 10001:10001
+  ```
+* **Labels OCI** (traçabilité) :
 
-* Ne mettez **jamais** de secrets dans l’image (ils finissent dans les couches).
-* Évitez de dépendre de `latest` en prod.
-* N’écrasez pas des tags stables déjà publiés (sauf politique assumée).
-* N’oubliez pas de **pruner** régulièrement (images/volumes non utilisés).
+  ```Dockerfile
+  LABEL org.opencontainers.image.title="api" \
+        org.opencontainers.image.version="$VERSION" \
+        org.opencontainers.image.revision="$GIT_SHA" \
+        org.opencontainers.image.source="https://github.com/acme/api"
+  ```
+* **Base minimale** : `alpine`, `distroless`, `scratch` (selon besoin).
+
+  > Attention aux libs (`glibc` vs `musl`) : certaines apps requièrent `glibc`.
 
 ---
 
-## 11) Aide-mémoire (cheat-sheet minimal)
+## 12) Parcours guidé (pas-à-pas concret)
+
+> On va : **tirer** → **lire digest** → **démarrer par digest** → **construire** → **tagger** → **pousser** → **inspecter** → **sauver/restaurer**.
+
+**Étape 1 — Tirer & identifier le digest**
 
 ```bash
-# Lister
-docker images --digests
-docker images --filter reference='acme/*'
+docker pull nginx:1.27
+docker image inspect --format '{{index .RepoDigests 0}}' nginx:1.27
+# → nginx@sha256:ABCD...
+```
 
-# Pull
-docker pull --platform linux/arm64 alpine:3.20
+**Étape 2 — Exécuter par digest (immutabilité)**
 
-# Build (basique)
-docker build -t acme/app:1.0 .
+```bash
+docker run -d --name web -p 8080:80 nginx@sha256:ABCD...
+curl -I http://localhost:8080
+```
 
-# Tag / Push
-docker tag acme/app:1.0 ghcr.io/acme/app:1.0
-docker login ghcr.io
-docker push ghcr.io/acme/app:1.0
+**Étape 3 — Construire une mini image**
+`Dockerfile` :
 
-# Inspect / History
-docker inspect acme/app:1.0
-docker history acme/app:1.0
+```Dockerfile
+FROM alpine:3.20
+RUN adduser -D -u 10001 app
+USER 10001:10001
+WORKDIR /app
+COPY hello.sh .
+RUN chmod +x hello.sh
+ENTRYPOINT ["./hello.sh"]
+```
 
-# Save / Load
-docker save acme/app:1.0 > app.tar
-docker load < app.tar
+`hello.sh` :
 
-# Prune / Espace
+```sh
+#!/bin/sh
+echo "Hello from $(uname -m) as user $(id -u)"
+```
+
+Build & run :
+
+```bash
+echo '#!/bin/sh\necho "Hello from $(uname -m) as user $(id -u)"' > hello.sh
+docker build -t demo/hello:1.0 .
+docker run --rm demo/hello:1.0
+```
+
+**Étape 4 — Tagger & pousser (ex. GHCR)**
+
+```bash
+docker tag demo/hello:1.0 ghcr.io/<org>/hello:1.0
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u <user> --password-stdin
+docker push ghcr.io/<org>/hello:1.0
+```
+
+**Étape 5 — Inspecter l’historique & les labels**
+
+```bash
+docker image history demo/hello:1.0
+docker image inspect --format '{{json .Config.Labels}}' demo/hello:1.0 | jq
+```
+
+**Étape 6 — Save/Load (transfert offline)**
+
+```bash
+docker save demo/hello:1.0 > hello.tar
+# ... copier sur une autre machine ...
+docker load < hello.tar
+```
+
+**Étape 7 — Nettoyer proprement**
+
+```bash
+docker stop web && docker rm web
 docker image prune -f
 docker system df
 ```
 
 ---
 
-## 12) Checklist de clôture (qualité d’une image)
+## 13) FAQ & erreurs fréquentes (solutions rapides)
 
-* Base **minimale** et **pin** de version (digest si possible).
-* `.dockerignore` propre (évite d’embarquer des masses de fichiers).
-* **Multi-stage** si build : runtime épuré.
-* **USER** non-root ; pas de secrets ; labels OCI renseignés.
-* Taille et nombre de couches **raisonnés** ; `history` justifiable.
-* Tagging **cohérent** (SemVer/canaux) ; digest référencé pour la prod.
-* Image **poussée** dans un registre de confiance.
+* **`denied: requested access to the resource is denied` (push)**
+  → Mauvais `docker login` ou droits insuffisants sur le registre.
 
+* **`manifest unknown` / `pull access denied`**
+  → Tag inexistant, repo privé, faute de frappe sur le nom.
+
+* **`no space left on device`**
+  → `docker system df` puis `docker system prune -a` (⚠️), ou agrandir le disque.
+
+* **Je tire `arm64` sur une machine `amd64`, et ça ne démarre pas**
+  → Il faut l’émulation (QEMU/binfmt) ou une cible `amd64`.
+
+* **J’ai oublié `.dockerignore`, mon image est énorme**
+  → Ajoute-le et reconstruis ; vérifie `docker history` pour localiser les couches lourdes.
+
+---
+
+## 14) Checklist finale (qualité image)
+
+* [ ] **.dockerignore** précis (pas de `.git`, `node_modules`, artefacts build).
+* [ ] **Multi-stage** si build d’app (runtime **léger**).
+* [ ] **USER non-root**, pas de secrets en dur, **labels OCI** complets.
+* [ ] **Pinning** des versions ; base image raisonnable (`alpine`/`distroless`/`debian-slim`).
+* [ ] **History** cohérent ; caches nettoyés **dans la même couche**.
+* [ ] **Tag SemVer** publié ; **digest** noté pour déploiement.
+* [ ] Image poussée sur un **registre de confiance** ; espace local **nettoyé**.
+
+---
+
+### Aide-mémoire (condensé)
+
+```bash
+# Lister / filtrer
+docker images --digests
+docker images --filter reference='ghcr.io/org/*'
+
+# Pull
+docker pull --platform linux/arm64 alpine:3.20
+
+# Build
+docker build -t org/app:1.0 -f Dockerfile .
+
+# Tag / Push
+docker tag org/app:1.0 ghcr.io/org/app:1.0
+docker login ghcr.io && docker push ghcr.io/org/app:1.0
+
+# Inspect / History
+docker inspect org/app:1.0
+docker history org/app:1.0
+
+# Save / Load
+docker save org/app:1.0 > app.tar
+docker load < app.tar
+
+# Nettoyage
+docker image prune -f
+docker system df
+```
