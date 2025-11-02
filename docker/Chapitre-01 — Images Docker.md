@@ -1,6 +1,6 @@
 # Chapitre-01 — Images Docker (version enrichie, **pas-à-pas**)
 
-> Objectif : repartir des bases **avec méthode** et t’amener jusqu’à des images **propres, traçables, reproductibles et prêtes prod** (tags + digest), tout en comprenant *exactement* ce que Docker manipule.
+Objectif : repartir des bases **avec méthode** et t’amener jusqu’à des images **propres, traçables, reproductibles et prêtes prod** (tags + digest), tout en comprenant *exactement* ce que Docker manipule.
 
 ---
 
