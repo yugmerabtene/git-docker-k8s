@@ -42,7 +42,7 @@ docker system df          # occupation disque (images/containers/volumes)
 * **Tag** : alias **mutable** (ex. `:1.4.2`, `:stable`, `:latest`) → pratique mais **non garanti**.
 * **Index (manifest list)** : “pointeur” vers plusieurs manifestes (amd64, arm64, …) pour une même **référence**.
 
-👉 Une *référence d’image* peut être un **tag** (`repo:1.4.2`) *ou* un **digest** (`repo@sha256:…`). En production, **préférer le digest**.
+Une *référence d’image* peut être un **tag** (`repo:1.4.2`) *ou* un **digest** (`repo@sha256:…`). En production, **préférer le digest**.
 
 ---
 
@@ -223,7 +223,7 @@ docker buildx imagetools inspect nginx:1.27
 docker image ls --filter dangling=true
 docker image prune -f                # supprime dangling
 docker system df                     # récapitulatif espace
-docker system prune -a               # ⚠️ agressif : supprime tout ce qui n’est pas référencé
+docker system prune -a               # agressif : supprime tout ce qui n’est pas référencé
 ```
 
 > Si `rm` échoue : l’image est **utilisée** par au moins un conteneur (même arrêté). Supprime d’abord le conteneur.
