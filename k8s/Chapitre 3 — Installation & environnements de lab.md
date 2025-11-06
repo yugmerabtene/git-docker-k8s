@@ -191,7 +191,7 @@ kubectl get pods -A
 
 ---
 
-### 6.4 Étape 2 — Créer un namespace dédié au projet
+### 6.4 Étape 2 — Créer un namespace dédié au projet (si ce n'est pas déja fait au chapitre-01)
 
 ```bash
 kubectl create namespace projet-fil-rouge
