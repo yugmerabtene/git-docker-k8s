@@ -426,6 +426,7 @@ kubectl get ns projet-fil-rouge --show-labels
 ### 8.3 Capturer l’état du cluster pour traçabilité
 
 ```bash
+mkdir -p ~/docs
 kubectl cluster-info > docs/cluster-info.txt
 kubectl version --output=yaml > docs/kubectl-version.yaml
 kubectl get nodes -o wide > docs/nodes.txt
