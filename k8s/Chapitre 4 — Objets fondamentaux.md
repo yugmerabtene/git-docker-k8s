@@ -1,10 +1,10 @@
-# Chapitre 4 — Administration et supervision de Kubernetes
+# **Chapitre 4 — Administration et supervision de Kubernetes**
 
 *(Supervision, logs, métriques, scaling, mises à jour continues)*
 
 ---
 
-## 1. Objectifs d’apprentissage
+## **1. Objectifs d’apprentissage**
 
 À la fin de ce chapitre, l’apprenant sera capable de :
 
@@ -16,9 +16,9 @@
 
 ---
 
-## 2. Introduction à l’administration du cluster
+## **2. Introduction à l’administration du cluster**
 
-### 2.1 Notions fondamentales
+### **2.1 Notions fondamentales**
 
 * Kubernetes repose sur un **contrôle continu** : chaque objet est surveillé par un contrôleur.
 * L’administration consiste à :
@@ -28,7 +28,9 @@
   * Gérer les ressources (CPU, mémoire, stockage).
   * Surveiller la santé des applications.
 
-### 2.2 Commandes de base d’administration
+---
+
+### **2.2 Commandes de base d’administration**
 
 ```bash
 kubectl get nodes -o wide
@@ -39,11 +41,19 @@ kubectl describe pod <nom>
 kubectl get events --sort-by=.lastTimestamp | tail
 ```
 
+**Contexte :**
+Ces commandes sont les fondations de la supervision :
+
+* `kubectl get nodes` : affiche les nœuds du cluster et leur état.
+* `kubectl top nodes/pods` : nécessite **metrics-server** et montre l’utilisation CPU/mémoire.
+* `kubectl describe pod` : donne les détails (état, IP, événements, images).
+* `kubectl get events` : permet de repérer rapidement les erreurs (crash, scheduling…).
+
 ---
 
-## 3. Supervision et journalisation
+## **3. Supervision et journalisation**
 
-### 3.1 Les métriques
+### **3.1 Les métriques**
 
 * Les métriques représentent l’utilisation **CPU**, **mémoire**, **réseau** et **stockage**.
 * Outil intégré : **metrics-server**.
@@ -59,59 +69,77 @@ kubectl get events --sort-by=.lastTimestamp | tail
 minikube addons enable metrics-server
 ```
 
-Vérification :
+**Contexte :**
+Cette commande active l’addon officiel **metrics-server** dans Minikube.
+Il collecte les métriques de chaque Pod et nœud en temps réel via l’API Kubelet.
+
+**Vérification :**
 
 ```bash
 kubectl top nodes
-kubectl top pods
+kubectl top pods -n projet-fil-rouge
 ```
 
----
-
-### 3.2 Les journaux (logs)
-
-* Chaque Pod produit des logs consultables avec :
-
-  ```bash
-  kubectl logs <nom_du_pod>
-  ```
-* Pour des applications multi-conteneurs :
-
-  ```bash
-  kubectl logs <nom_du_pod> -c <nom_du_conteneur>
-  ```
-* Pour les composants système :
-
-  ```bash
-  kubectl -n kube-system logs <pod>
-  ```
-* Pour un suivi continu :
-
-  ```bash
-  kubectl logs -f <nom_du_pod>
-  ```
+**Contexte :**
+Si les valeurs CPU et mémoire s’affichent, l’addon fonctionne.
+Sinon, attendez 1 à 2 minutes pour la première collecte.
 
 ---
 
-### 3.3 Les événements
+### **3.2 Les journaux (logs)**
 
-* Kubernetes enregistre les événements du cluster :
+```bash
+kubectl logs <nom_du_pod> -n projet-fil-rouge
+```
 
-  ```bash
-  kubectl get events --sort-by=.metadata.creationTimestamp
-  ```
-* Types d’événements :
+**Contexte :**
+Affiche les logs d’un Pod unique.
+Les journaux sont essentiels pour diagnostiquer les erreurs d’application.
 
-  * `Scheduled` : Pod assigné à un nœud.
-  * `Pulled` : image téléchargée.
-  * `Started` / `Killing` : cycle de vie.
-  * `FailedScheduling` : ressource indisponible.
+```bash
+kubectl logs <nom_du_pod> -c <nom_du_conteneur> -n projet-fil-rouge
+```
+
+**Contexte :**
+Pour les Pods multi-conteneurs, cette commande permet de cibler un conteneur spécifique.
+
+```bash
+kubectl -n kube-system logs <pod>
+```
+
+**Contexte :**
+Permet d’analyser les logs des composants système (scheduler, controller, etc.).
+
+```bash
+kubectl logs -f <nom_du_pod> -n projet-fil-rouge
+```
+
+**Contexte :**
+`-f` ("follow") permet un suivi continu des logs en temps réel (utile pour observer un backend HTTP).
 
 ---
 
-## 4. Rolling Update et Rollback
+### **3.3 Les événements**
 
-### 4.1 Principe
+```bash
+kubectl get events --sort-by=.metadata.creationTimestamp
+```
+
+**Contexte :**
+Liste chronologiquement les événements récents du cluster (créations, suppressions, erreurs).
+
+**Types d’événements fréquents :**
+
+* `Scheduled` : Pod assigné à un nœud.
+* `Pulled` : image téléchargée.
+* `Started` / `Killing` : cycle de vie.
+* `FailedScheduling` : ressource indisponible ou contrainte non respectée.
+
+---
+
+## **4. Rolling Update et Rollback**
+
+### **4.1 Principe**
 
 * Les **Rolling Updates** permettent de **mettre à jour une application sans interruption** :
 
@@ -119,9 +147,9 @@ kubectl top pods
   * les anciens sont arrêtés une fois les nouveaux disponibles.
 * En cas d’échec, un **Rollback** restaure la version précédente.
 
-### 4.2 Paramètres importants
+---
 
-Dans un `Deployment` :
+### **4.2 Paramètres importants**
 
 ```yaml
 spec:
@@ -132,213 +160,231 @@ spec:
       maxUnavailable: 1
 ```
 
-### 4.3 Commandes associées
-
-```bash
-# Mettre à jour une image
-kubectl set image deployment/frontend nginx=nginx:1.25
-
-# Suivre la progression
-kubectl rollout status deployment/frontend
-
-# Historique des déploiements
-kubectl rollout history deployment/frontend
-
-# Revenir à la version précédente
-kubectl rollout undo deployment/frontend
-```
+**Contexte :**
+Ces paramètres indiquent que Kubernetes peut créer **1 Pod supplémentaire** au maximum pendant la mise à jour et qu’au plus **1 Pod peut être indisponible** à un instant donné.
 
 ---
 
-## 5. Autoscaling (mise à l’échelle automatique)
-
-### 5.1 Types de scalabilité
-
-* **HPA (Horizontal Pod Autoscaler)** : augmente le nombre de Pods.
-* **VPA (Vertical Pod Autoscaler)** : ajuste les ressources (CPU/RAM) d’un Pod.
-* **Cluster Autoscaler** : ajoute ou retire des nœuds.
-
-### 5.2 Création d’un HPA
+### **4.3 Commandes associées**
 
 ```bash
-kubectl autoscale deployment frontend --cpu-percent=50 --min=1 --max=5
+kubectl set image deployment/frontend nginx=nginx:1.27 -n projet-fil-rouge
+kubectl rollout status deployment/frontend -n projet-fil-rouge
+kubectl rollout history deployment/frontend -n projet-fil-rouge
+kubectl rollout undo deployment/frontend -n projet-fil-rouge
 ```
 
-### 5.3 Vérification
+**Contexte :**
+Ces commandes gèrent les déploiements en continu :
+
+* `set image` : met à jour l’image d’un conteneur.
+* `rollout status` : affiche la progression en direct.
+* `rollout history` : liste les versions.
+* `rollout undo` : restaure la version précédente en cas de problème.
+
+---
+
+## **5. Autoscaling (mise à l’échelle automatique)**
+
+### **5.1 Types de scalabilité**
+
+* **HPA (Horizontal Pod Autoscaler)** : augmente le nombre de Pods selon la charge.
+* **VPA (Vertical Pod Autoscaler)** : ajuste les ressources d’un Pod (CPU/RAM).
+* **Cluster Autoscaler** : ajoute ou retire des nœuds (non applicable dans Minikube).
+
+---
+
+### **5.2 Création d’un HPA**
 
 ```bash
-kubectl get hpa
-kubectl describe hpa frontend
+kubectl autoscale deployment frontend -n projet-fil-rouge --cpu-percent=50 --min=1 --max=5
 ```
 
-### 5.4 Simulation de charge
+**Contexte :**
+Crée un **autoscaler horizontal** sur le déploiement `frontend`.
+Si la charge CPU moyenne dépasse **50 %**, Kubernetes crée automatiquement de nouveaux Pods (jusqu’à 5).
+
+---
+
+### **5.3 Vérification**
 
 ```bash
-kubectl run loader --image=busybox --restart=Never -- /bin/sh -c \
+kubectl get hpa -n projet-fil-rouge
+kubectl describe hpa frontend -n projet-fil-rouge
+```
+
+**Contexte :**
+Permet de vérifier les seuils configurés et l’évolution en temps réel (CPU target / current).
+
+---
+
+### **5.4 Simulation de charge**
+
+```bash
+kubectl run loadtest --image=busybox --restart=Never -n projet-fil-rouge -- /bin/sh -c \
 "while true; do wget -q -O- http://frontend; done"
 ```
 
-> Kubernetes crée automatiquement de nouveaux Pods quand la charge CPU dépasse 50 %.
+**Contexte :**
+Ce Pod exécute une boucle infinie envoyant des requêtes HTTP vers `frontend`.
+Cela génère de la charge CPU simulée pour déclencher le scaling.
 
 ---
 
-## 6. LAB – Projet Fil Rouge (Phase 3)
+### **5.5 Observation**
 
-### Supervision, mise à jour et autoscaling de l’application web
+```bash
+kubectl get hpa -w -n projet-fil-rouge
+kubectl get pods -l app=frontend -n projet-fil-rouge
+```
 
----
-
-### 6.1 Objectif
-
-* Étendre l’application déployée au **Chapitre 3**.
-* Ajouter :
-
-  * la **supervision (metrics-server)**,
-  * une **mise à jour continue** du frontend,
-  * un **autoscaling dynamique**.
+**Contexte :**
+Le flag `-w` ("watch") actualise en continu.
+Vous verrez le nombre de Pods augmenter lorsque la charge CPU dépassera le seuil défini.
 
 ---
 
-### 6.2 Prérequis
+## **6. LAB – Projet Fil Rouge (Phase 3)**
 
-* Cluster Minikube opérationnel avec :
-
-  * **frontend (Nginx)**,
-  * **backend (HTTPD)**,
-  * **Ingress activé**.
-* Docker, kubectl, et metrics-server installés :
-
-  ```bash
-  minikube addons enable metrics-server
-  ```
+### **Supervision, mise à jour et autoscaling de l’application web**
 
 ---
 
-### 6.3 Étape 1 — Vérification initiale
+### **6.1 Objectif**
+
+Poursuivre l’application du **Chapitre 3** en ajoutant :
+
+* la **supervision (metrics-server)**,
+* une **mise à jour continue du frontend**,
+* un **autoscaling dynamique**.
+
+---
+
+### **6.2 Prérequis**
+
+* Cluster Minikube actif avec :
+
+  * `frontend (Nginx)`,
+  * `backend (HTTPD)`,
+  * `Ingress activé`.
+* Domaine local `local.dev` configuré dans `/etc/hosts`.
+* Docker, kubectl et metrics-server opérationnels :
+
+```bash
+minikube addons enable metrics-server
+```
+
+---
+
+### **6.3 Étape 1 — Vérification initiale**
 
 ```bash
 kubectl get all -n projet-fil-rouge
 kubectl top pods -n projet-fil-rouge
 ```
 
----
-
-### 6.4 Étape 2 — Mise à jour continue (Rolling Update)
-
-Mettre à jour le **frontend** vers une nouvelle version :
-
-```bash
-kubectl set image deployment/frontend nginx=nginx:1.27
-kubectl rollout status deployment/frontend
-kubectl rollout history deployment/frontend
-```
-
-> Vérifiez que le service reste accessible sur `http://local.dev`.
+**Contexte :**
+Vérifie l’état du cluster avant modifications et la collecte de métriques CPU/mémoire.
 
 ---
 
-### 6.5 Étape 3 — Création d’un autoscaler
+### **6.4 Étape 2 — Rolling Update (mise à jour continue)**
 
 ```bash
-kubectl autoscale deployment frontend --cpu-percent=50 --min=1 --max=5
+kubectl set image deployment/frontend nginx=nginx:1.27 -n projet-fil-rouge
+kubectl rollout status deployment/frontend -n projet-fil-rouge
+kubectl rollout history deployment/frontend -n projet-fil-rouge
 ```
 
-Vérification :
+**Contexte :**
+Met à jour le conteneur Nginx vers la version 1.27 sans interruption de service.
+`rollout status` montre la progression du remplacement des Pods.
+
+Observation en direct :
 
 ```bash
-kubectl get hpa -n projet-fil-rouge
+kubectl get pods -l app=frontend -w -n projet-fil-rouge
 ```
 
 ---
 
-### 6.6 Étape 4 — Simulation de charge
-
-Lancer un Pod générant du trafic :
+### **6.5 Étape 3 — Autoscaling**
 
 ```bash
-kubectl run loadtest --image=busybox --restart=Never -- /bin/sh -c \
+kubectl autoscale deployment frontend -n projet-fil-rouge --cpu-percent=50 --min=1 --max=5
+```
+
+**Contexte :**
+Crée un HPA sur le frontend.
+Le cluster augmentera automatiquement le nombre de Pods si la charge CPU > 50 %.
+
+---
+
+### **6.6 Étape 4 — Simulation de charge**
+
+```bash
+kubectl run loadtest --image=busybox --restart=Never -n projet-fil-rouge -- /bin/sh -c \
 "while true; do wget -q -O- http://frontend; done"
 ```
 
-Observer l’évolution :
+**Contexte :**
+Ce conteneur “génère du trafic” pour déclencher le scaling du frontend.
+Surveillez l’évolution en temps réel :
 
 ```bash
-kubectl get hpa -w
-kubectl get pods -l app=frontend
+kubectl get hpa -w -n projet-fil-rouge
 ```
-
-> Vous verrez progressivement apparaître de nouveaux Pods lorsque la charge CPU augmente.
 
 ---
 
-### 6.7 Étape 5 — Observation et supervision
+### **6.7 Étape 5 — Observation et supervision**
 
 ```bash
-kubectl top pods
+kubectl top pods -n projet-fil-rouge
 kubectl get events --sort-by=.metadata.creationTimestamp | tail
 ```
 
-Pour afficher graphiquement :
+**Contexte :**
+Permet de visualiser l’utilisation des ressources et les événements récents du cluster.
+
+Affichage graphique :
 
 ```bash
 minikube dashboard
 ```
 
+**Contexte :**
+Ouvre l’interface graphique de Minikube avec graphiques, métriques et logs en temps réel.
+
 ---
 
-### 6.8 Étape 6 — Nettoyage
+### **6.8 Étape 6 — Nettoyage**
 
 ```bash
-kubectl delete pod loadtest
-kubectl delete hpa frontend
+kubectl delete pod loadtest -n projet-fil-rouge
+kubectl delete hpa frontend -n projet-fil-rouge
 ```
 
----
-
-### 6.9 Résultats attendus
-
-* L’application supporte les montées en charge sans interruption.
-* Les Pods se créent et se détruisent automatiquement.
-* Le Rolling Update s’effectue sans perte de disponibilité.
-* Les métriques et événements sont consultables.
+**Contexte :**
+Arrête le générateur de charge et supprime la règle d’autoscaling.
+Le déploiement frontend revient à 1 Pod.
 
 ---
 
-## 7. Bonnes pratiques d’administration
+### **6.9 Résultats attendus**
+
+* L’application supporte la montée en charge sans interruption.
+* Le scaling se déclenche automatiquement.
+* Les Rolling Updates se font sans perte de service.
+* Les métriques et événements sont visibles via `kubectl top` et le dashboard.
+
+---
+
+## **7. Bonnes pratiques d’administration**
 
 * Mettre à jour régulièrement Kubernetes et les images.
-* Surveiller les quotas et limites de ressources.
-* Utiliser des **namespaces** pour isoler les environnements.
-* Sauvegarder les manifests YAML versionnés dans Git.
-* Mettre en place un **système d’alerte** (Prometheus, Grafana, Alertmanager).
-
----
-
-## 8. Résumé pour diapo
-
-### 1. Objectifs
-
-* Administrer et superviser un cluster Kubernetes.
-* Analyser les logs, métriques et événements.
-* Gérer les mises à jour continues et l’autoscaling.
-
-### 2. Outils utilisés
-
-* `kubectl`, `metrics-server`, `minikube dashboard`.
-* Composants : API Server, Controller Manager, Scheduler.
-
-### 3. Concepts clés
-
-* **Rolling Update** : mise à jour sans interruption.
-* **Rollback** : retour à la version précédente.
-* **HPA** : autoscaling horizontal.
-* **Metrics Server** : collecte des métriques CPU/mémoire.
-
-### 4. LAB – Phase 3 du projet fil rouge
-
-* Ajout du **metrics-server**.
-* Mise à jour du **frontend Nginx** sans coupure.
-* Activation du **scaling automatique** selon la charge CPU.
-* Résultat : application auto-scalable, supervisée et tolérante aux montées en charge.
-
-
+* Surveiller les **quotas et limites de ressources**.
+* Utiliser les **namespaces** pour isoler les environnements.
+* Sauvegarder les manifests YAML dans Git.
+* Mettre en place un **monitoring centralisé** (Prometheus, Grafana, Alertmanager).
+* Configurer des alertes pour anticiper les pannes.
