@@ -411,7 +411,3 @@ kubectl auth can-i get pods --as=system:serviceaccount:projet-fil-rouge:web-sa
 * **Audit logging activé** et analysé.
 * **Cloisonnement réseau** entre Namespaces.
 * **Images signées et scannées** avant déploiement.
-
-
-
-Souhaites-tu que je poursuive avec le **Chapitre 6 — DevOps et pipeline CI/CD Kubernetes**, pour prolonger la logique du fil rouge (déploiement sécurisé et automatisé) ?
