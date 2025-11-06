@@ -417,7 +417,8 @@ metadata:
     project: fil-rouge
     env: dev
 YAML
-
+```
+```bash
 kubectl apply -f k8s/base/namespace.yaml
 kubectl get ns projet-fil-rouge --show-labels
 ```
