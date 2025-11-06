@@ -401,6 +401,8 @@ git config user.email "vous@example.com"
 mkdir -p k8s/base k8s/overlays/dev k8s/overlays/staging k8s/overlays/prod
 mkdir -p apps/frontend apps/backend
 mkdir -p docs scripts
+minikube start --driver=docker
+
 ```
 
 ### 8.2 Créer le namespace du fil rouge
