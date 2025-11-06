@@ -168,7 +168,8 @@ Chaque conteneur déclare :
 
 * des *requests* (ressources garanties, nécessaires au démarrage)
 * des *limits* (maximum autorisé)
-  Kubernetes planifie les Pods sur les nœuds en tenant compte de ces contraintes pour éviter la surcharge.
+
+Kubernetes planifie les Pods en fonction de ces valeurs pour éviter la surcharge.
 
 ---
 
@@ -314,7 +315,7 @@ La variable `BACKEND_URL` permettra de pointer vers le backend HTTPD.
 
 ### **6.5 Exposer le frontend via Ingress**
 
-#### 1. Activer le module Ingress
+#### **1. Activer le module Ingress**
 
 ```bash
 minikube addons enable ingress
@@ -325,7 +326,7 @@ Le module Ingress intégré à Minikube active le contrôleur NGINX, qui joue le
 
 ---
 
-#### 2. Créer le fichier `ingress.yaml`
+#### **2. Créer le fichier `ingress.yaml`**
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -346,17 +347,48 @@ spec:
               number: 80
 ```
 
-```bash
-kubectl apply -f ingress.yaml
-```
-
 **Contexte :**
 Cet Ingress redirige toutes les requêtes HTTP arrivant sur le domaine `local.dev` vers le Service `frontend`.
 C’est le point d’entrée unique de l’application côté client.
 
 ---
 
-#### 3. Configurer le nom de domaine local
+#### **⚠ Prévention des conflits Ingress**
+
+Avant d’appliquer votre Ingress, vérifiez qu’aucun autre Ingress n’utilise déjà le domaine `local.dev` :
+
+```bash
+kubectl get ingress -A
+```
+
+Si un Ingress existe déjà dans le namespace `default`, supprimez-le :
+
+```bash
+kubectl delete ingress web-ingress -n default
+```
+
+Cela évite l’erreur :
+
+```
+admission webhook "validate.nginx.ingress.kubernetes.io" denied the request:
+host "local.dev" and path "/" is already defined in ingress default/web-ingress
+```
+
+Optionnellement, utilisez un domaine unique :
+
+```yaml
+- host: projet-fil-rouge.local.dev
+```
+
+et ajoutez-le à `/etc/hosts` :
+
+```bash
+echo "$(minikube ip) projet-fil-rouge.local.dev" | sudo tee -a /etc/hosts
+```
+
+---
+
+#### **3. Configurer le nom de domaine local**
 
 ```bash
 echo "$(minikube ip) local.dev" | sudo tee -a /etc/hosts
@@ -369,7 +401,7 @@ Cela permet d’accéder à l’application via `http://local.dev` dans le navig
 
 ---
 
-#### 4. Tester l’accès via Ingress
+#### **4. Tester l’accès via Ingress**
 
 ```bash
 minikube tunnel
@@ -402,6 +434,40 @@ Ces commandes permettent de s’assurer que tout fonctionne :
 
 ---
 
+#### **Analyse des logs**
+
+**Logs frontend (NGINX)**
+
+```
+2025/11/06 23:06:10 [notice] 1#1: using the "epoll" event method
+2025/11/06 23:06:10 [notice] 1#1: nginx/1.29.3
+2025/11/06 23:06:10 [notice] 1#1: start worker processes
+2025/11/06 23:06:10 [notice] 1#1: start worker process 28
+2025/11/06 23:06:10 [notice] 1#1: start worker process 29
+```
+
+Le serveur NGINX démarre ses processus “workers” sans erreur : le frontend fonctionne normalement.
+
+**Logs backend (Apache HTTPD)**
+
+```
+AH00558: httpd: Could not reliably determine the server's fully qualified domain name, using 10.244.0.10.
+Set the 'ServerName' directive globally to suppress this message
+[Thu Nov 06 23:03:59.643852 2025] [mpm_event:notice] [pid 1:tid 1] AH00489: Apache/2.4.65 (Unix) configured -- resuming normal operations
+[Thu Nov 06 23:03:59.671509 2025] [core:notice] [pid 1:tid 1] AH00094: Command line: 'httpd -D FOREGROUND'
+```
+
+L’avertissement `ServerName` indique simplement qu’Apache ne connaît pas son nom d’hôte complet (FQDN).
+Il peut être ignoré ou supprimé en ajoutant cette ligne dans la configuration du conteneur :
+
+```yaml
+command: ["httpd", "-D", "FOREGROUND", "-c", "ServerName localhost"]
+```
+
+Cela supprime le message sans affecter le fonctionnement.
+
+---
+
 ### **6.7 Nettoyage (facultatif)**
 
 ```bash
@@ -409,6 +475,5 @@ kubectl delete namespace projet-fil-rouge
 ```
 
 **Contexte :**
-Supprime toutes les ressources du projet et libère la mémoire de ton cluster Minikube.
-
+Supprime toutes les ressources du projet et libère la mémoire du cluster Minikube.
 
