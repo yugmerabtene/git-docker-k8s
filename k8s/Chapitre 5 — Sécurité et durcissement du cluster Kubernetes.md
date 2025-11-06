@@ -10,147 +10,180 @@
 
 * Comprendre les **mécanismes de sécurité intégrés** à Kubernetes.
 * Mettre en œuvre le **contrôle d’accès basé sur les rôles (RBAC)**.
-* Gérer les **identités applicatives** via les **ServiceAccounts**.
+* Gérer les **identités applicatives** via les **Service Accounts**.
 * Sécuriser les **informations sensibles** avec **Secrets**.
-* Mettre en place des **politiques réseau (Network Policies)**.
-* Activer et configurer la **sécurité TLS**, la **journalisation des audits** et la **sécurisation des communications**.
-* Poursuivre le **projet fil rouge** (Phase 4) en durcissant le cluster et les Pods de l’application web.
+* Définir des **politiques réseau (Network Policies)**.
+* Configurer la **sécurité TLS**, l’**audit API** et la **sécurisation des communications**.
+* Poursuivre le **projet fil rouge** (phase 4) en durcissant le cluster et les Pods.
 
 ---
 
 ## **2. Principes fondamentaux de la sécurité Kubernetes**
 
-### 2.1 Modèle de sécurité à plusieurs couches
+### **2.1 Modèle de sécurité en profondeur**
 
-Kubernetes applique une **sécurité en profondeur (Defense in Depth)** :
+Kubernetes applique une stratégie de **“Defense in Depth”** :
 
-1. **Authentification (AuthN)** : identifier *qui* fait la requête.
-2. **Autorisation (AuthZ)** : déterminer *ce qu’il peut faire*.
-3. **Admission Control** : appliquer ou rejeter les actions (validation/mutation).
-4. **Sécurité réseau** : limiter la communication entre Pods et Services.
-5. **Sécurité des secrets** : protéger les données sensibles (mots de passe, clés).
-6. **Audit et traçabilité** : journaliser les accès et modifications.
+1. **Authentification (AuthN)** : identifier qui fait la requête.
+2. **Autorisation (AuthZ)** : déterminer ce qu’il peut faire.
+3. **Admission Control** : valider ou rejeter les actions.
+4. **Sécurité réseau** : contrôler les communications entre Pods.
+5. **Protection des Secrets** : sécuriser les données sensibles.
+6. **Audit et traçabilité** : enregistrer toutes les actions API.
 
-### 2.2 Enjeux du durcissement
-
-Un cluster mal configuré expose des risques majeurs :
-
-* Escalade de privilèges (Pods en mode root).
-* Exposition de Secrets dans les images ou logs.
-* Réseau non segmenté → mouvements latéraux entre namespaces.
-* Accès direct à l’API sans authentification forte.
+**Contexte :**
+Chaque couche complète la précédente ; un cluster bien durci limite les risques même si un Pod ou un compte est compromis.
 
 ---
 
-## **3. Contrôle d’accès RBAC (Role-Based Access Control)**
+### **2.2 Enjeux du durcissement**
 
-### 3.1 Principe
+Un cluster mal configuré expose :
 
-* RBAC contrôle les droits d’accès aux ressources Kubernetes.
-* Les autorisations sont définies via des **objets YAML** :
+* des **escalades de privilèges** (Pods root) ;
+* des **expositions de Secrets** dans les logs ou images ;
+* un **réseau non segmenté** permettant les mouvements latéraux ;
+* un **accès API non authentifié**.
 
-  * **Role** (au sein d’un namespace).
-  * **ClusterRole** (global à tout le cluster).
-  * **RoleBinding / ClusterRoleBinding** (lient les rôles aux utilisateurs ou groupes).
+**Objectif :** mettre en place une sécurité multi-niveaux sur le plan de contrôle, le réseau et les applications.
 
-### 3.2 Exemple logique de hiérarchie
+---
+
+## **3. Contrôle d’accès RBAC**
+
+### **3.1 Principe**
+
+Le **Role-Based Access Control** (RBAC) définit les actions autorisées sur les ressources Kubernetes.
+
+* **Role** : permissions dans un namespace.
+* **ClusterRole** : permissions globales.
+* **RoleBinding / ClusterRoleBinding** : lient ces rôles à des utilisateurs ou Service Accounts.
+
+---
+
+### **3.2 Hiérarchie logique**
 
 ```
-Utilisateur/ServiceAccount
+Utilisateur / ServiceAccount
    │
    ▼
-RoleBinding (namespace)
+RoleBinding
    │
    ▼
-Role (autorisations sur objets spécifiques)
+Role
 ```
 
-### 3.3 Commandes d’inspection
+**Contexte :**
+Le Role contient les droits, le Binding relie ces droits à une identité.
+
+---
+
+### **3.3 Commandes utiles**
 
 ```bash
 kubectl get roles,rolebindings -A
 kubectl auth can-i list pods --as=system:serviceaccount:default:sa1
 ```
 
-### 3.4 Bonnes pratiques RBAC
+**Contexte :**
+La seconde commande teste les permissions d’une identité (utile pour vérifier qu’un ServiceAccount n’a pas de droits excessifs).
+
+---
+
+### **3.4 Bonnes pratiques**
 
 * Appliquer le **principe du moindre privilège**.
-* Créer des **rôles spécifiques par namespace**.
-* Utiliser des **ClusterRoles** uniquement pour les administrateurs.
-* Auditer les droits régulièrement (`kubectl get clusterrolebindings`).
+* Créer des rôles spécifiques par namespace.
+* Réserver les **ClusterRoles** aux administrateurs.
+* Auditer régulièrement les droits (`kubectl get clusterrolebindings`).
 
 ---
 
 ## **4. Service Accounts et identités applicatives**
 
-### 4.1 Définition
+### **4.1 Définition**
 
-* Un **ServiceAccount (SA)** est une identité utilisée par un Pod pour interagir avec l’API Kubernetes.
-* Chaque namespace contient par défaut un `default` ServiceAccount.
-* On peut créer un SA dédié pour isoler les permissions d’une application.
-
-### 4.2 Fichiers associés
-
-* Token JWT monté automatiquement dans `/var/run/secrets/kubernetes.io/serviceaccount/`.
-* Autorisations définies via **RoleBinding**.
-
-### 4.3 Commandes utiles
-
-```bash
-kubectl create serviceaccount webapp-sa
-kubectl get serviceaccount
-kubectl describe sa webapp-sa
-```
+Un **Service Account (SA)** est l’identité utilisée par un Pod pour parler à l’API Kubernetes.
+Chaque namespace possède un SA `default`, mais il est recommandé de créer des SA dédiés.
 
 ---
 
-## **5. Secrets et gestion sécurisée des données sensibles**
+### **4.2 Fichiers et tokens**
 
-### 5.1 Utilité
+Le token du SA est automatiquement monté dans le Pod à :
+`/var/run/secrets/kubernetes.io/serviceaccount/token`.
 
-* Les **Secrets** stockent des informations sensibles : mots de passe, clés API, certificats TLS.
-* Ils sont encodés en **Base64** et peuvent être :
+Il sert pour les appels authentifiés à l’API.
 
-  * montés dans un Pod sous forme de fichier, ou
-  * injectés comme variables d’environnement.
+---
 
-### 5.2 Commandes
+### **4.3 Commandes**
+
+```bash
+kubectl create serviceaccount webapp-sa -n projet-fil-rouge
+kubectl get serviceaccounts -n projet-fil-rouge
+kubectl describe sa webapp-sa -n projet-fil-rouge
+```
+
+**Contexte :**
+Ces commandes créent et inspectent un SA qui sera lié par un RoleBinding à un rôle limité.
+
+---
+
+## **5. Secrets et données sensibles**
+
+### **5.1 Utilité**
+
+Les **Secrets** contiennent des mots de passe, clés API ou certificats.
+Ils peuvent être montés dans un Pod ou injectés en variable d’environnement.
+
+---
+
+### **5.2 Création et affichage**
 
 ```bash
 kubectl create secret generic db-secret \
   --from-literal=username=admin \
-  --from-literal=password=1234
-kubectl get secrets
-kubectl describe secret db-secret
+  --from-literal=password=1234 \
+  -n projet-fil-rouge
+kubectl get secrets -n projet-fil-rouge
+kubectl describe secret db-secret -n projet-fil-rouge
 ```
 
-### 5.3 Bonnes pratiques
+**Contexte :**
+Les valeurs sont encodées en Base64 mais non chiffrées ; elles doivent être protéger via l’API Server.
 
-* Activer le **chiffrement at-rest** dans la configuration du kube-apiserver :
+---
+
+### **5.3 Bonnes pratiques**
+
+* Activer le chiffrement “**at rest**” dans le `kube-apiserver` :
 
   ```
   --encryption-provider-config=/etc/kubernetes/encryption-config.yaml
   ```
-* Interdire les accès en clair via `kubectl get secrets -o yaml`.
-* Utiliser **Vault** ou **SealedSecrets** pour la gestion externe.
+* Éviter les exports en clair (`kubectl get secrets -o yaml`).
+* Utiliser des solutions externes (**Vault**, **Sealed Secrets**) pour les clusters en production.
 
 ---
 
-## **6. Network Policies (Politiques réseau)**
+## **6. Network Policies**
 
-### 6.1 Rôle
+### **6.1 Rôle**
 
-* Les **Network Policies** définissent les règles de communication entre Pods.
-* Par défaut, tous les Pods communiquent librement.
-* Une politique permet de **restreindre le trafic entrant (Ingress)** et **sortant (Egress)**.
+Les **Network Policies** restreignent le trafic entrant (ingress) et sortant (egress) entre Pods.
+Par défaut, tous les Pods peuvent communiquer.
 
-### 6.2 Structure YAML type
+---
+
+### **6.2 Exemple de politique globale**
 
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: deny-all
+  namespace: projet-fil-rouge
 spec:
   podSelector: {}
   policyTypes:
@@ -158,91 +191,115 @@ spec:
   - Egress
 ```
 
-### 6.3 Points importants
-
-* Nécessite un **CNI compatible** (Calico, Cilium, Weave).
-* Chaque règle s’applique au niveau des Pods sélectionnés.
-* Il faut définir explicitement les flux autorisés.
-
-### 6.4 Bonnes pratiques
-
-* **Isolation stricte** entre namespaces (frontend ↔ backend).
-* Autoriser uniquement les flux nécessaires (`allow from namespace=backend`).
-* Documenter les politiques et les tester avec `netshoot`.
+**Contexte :**
+Cette politique bloque tout trafic pour le namespace ; d’autres règles devront ensuite autoriser certains flux.
 
 ---
 
-## **7. TLS, audit et sécurité du plan de contrôle**
+### **6.3 Règle entre frontend et backend**
 
-### 7.1 Sécurité TLS
-
-* Toutes les communications entre composants utilisent TLS :
-
-  * API Server ↔ etcd
-  * API Server ↔ kubelet
-  * Clients ↔ API Server
-* Certificats stockés dans `/etc/kubernetes/pki/`.
-
-### 7.2 Vérification des certificats
-
-```bash
-kubeadm certs check-expiration
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-backend
+  namespace: projet-fil-rouge
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+  policyTypes:
+  - Ingress
 ```
 
-### 7.3 Audit des accès
+**Contexte :**
+Seuls les Pods avec le label `app=frontend` peuvent accéder aux Pods `backend`.
+Les autres Pods du namespace sont bloqués.
 
-* Activer la journalisation des actions API :
+---
 
-  ```
-  --audit-policy-file=/etc/kubernetes/audit-policy.yaml
-  --audit-log-path=/var/log/kubernetes/audit.log
-  ```
-* Permet de retracer les actions utilisateurs (compliance ISO, RGPD).
+## **7. TLS et audit du plan de contrôle**
+
+### **7.1 Sécurité TLS**
+
+Les communications interne et externe sont chiffrées :
+
+* API Server ↔ etcd
+* API Server ↔ kubelet
+* Client ↔ API Server
+
+Les certificats sont dans `/etc/kubernetes/pki/`.
+
+---
+
+### **7.2 Vérifier les certificats**
+
+```bash
+sudo kubeadm certs check-expiration
+```
+
+**Contexte :**
+Affiche les dates d’expiration des certificats TLS utilisés par le cluster.
+
+---
+
+### **7.3 Activer l’audit API**
+
+Dans la configuration du kube-apiserver :
+
+```
+--audit-policy-file=/etc/kubernetes/audit-policy.yaml
+--audit-log-path=/var/log/kubernetes/audit.log
+```
+
+**Contexte :**
+Permet de journaliser toutes les requêtes API (utilisateur, heure, action).
+Indispensable pour la conformité ISO et RGPD.
 
 ---
 
 ## **8. LAB – Projet Fil Rouge (Phase 4)**
 
-### Sécurisation complète de l’application web sur le cluster local
+### **8.1 Objectif**
+
+Durcir le projet du chapitre 4 :
+
+* Créer un ServiceAccount spécifique.
+* Isoler les flux réseau frontend ↔ backend.
+* Protéger les Secrets et restreindre les droits RBAC.
 
 ---
 
-### 8.1 Objectif
+### **8.2 Prérequis**
 
-Durcir le projet du **Chapitre 4** :
-
-* Appliquer un modèle RBAC minimaliste.
-* Isoler le trafic réseau entre frontend et backend.
-* Protéger les secrets et restreindre les accès.
-
----
-
-### 8.2 Prérequis
-
-* Cluster Minikube opérationnel.
-* Application du fil rouge déjà déployée :
-
-  * Namespace : `projet-fil-rouge`
-  * Deployments : `frontend`, `backend`
-* CNI compatible (Flannel ou Calico).
+* Cluster Minikube fonctionnel.
+* Application du fil rouge déployée (`frontend`, `backend`).
+* Namespace `projet-fil-rouge`.
+* CNI compatible (Calico ou Flannel).
 
 ---
 
-### 8.3 Étape 1 — Créer un ServiceAccount dédié
+### **8.3 Étape 1 — ServiceAccount et rôle**
 
-```bash
-kubectl create serviceaccount web-sa -n projet-fil-rouge
-kubectl get sa -n projet-fil-rouge
-```
-
-Associer un rôle de lecture :
+Créer `rbac-web.yaml` :
 
 ```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: web-sa
+  namespace: projet-fil-rouge
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  namespace: projet-fil-rouge
   name: read-pods
+  namespace: projet-fil-rouge
 rules:
 - apiGroups: [""]
   resources: ["pods"]
@@ -269,15 +326,20 @@ Appliquer :
 kubectl apply -f rbac-web.yaml
 ```
 
+**Contexte :**
+Ce ServiceAccount dispose seulement du droit de lister les Pods dans le namespace.
+
 ---
 
-### 8.4 Étape 2 — Créer un Secret sécurisé
+### **8.4 Étape 2 — Secret sécurisé**
 
 ```bash
-kubectl create secret generic api-key --from-literal=token=AZERTY123 -n projet-fil-rouge
+kubectl create secret generic api-key \
+  --from-literal=token=AZERTY123 \
+  -n projet-fil-rouge
 ```
 
-Montage dans le backend :
+Dans le backend :
 
 ```yaml
 env:
@@ -288,11 +350,16 @@ env:
       key: token
 ```
 
+**Contexte :**
+Le Secret est injecté en variable d’environnement dans le Pod backend sans être stocké en clair dans le code.
+
 ---
 
-### 8.5 Étape 3 — Ajouter une politique réseau
+### **8.5 Étape 3 — Politique réseau**
 
-Créer `network-policy.yaml` :
+```bash
+kubectl apply -f network-policy.yaml
+```
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -313,21 +380,12 @@ spec:
   - Ingress
 ```
 
-Appliquer :
-
-```bash
-kubectl apply -f network-policy.yaml
-```
-
-Vérifier :
-
-```bash
-kubectl describe netpol allow-frontend-backend -n projet-fil-rouge
-```
+**Contexte :**
+Seuls les Pods frontend peuvent accéder au backend ; les autres communications sont bloquées.
 
 ---
 
-### 8.6 Étape 4 — Vérification globale
+### **8.6 Étape 4 — Vérifications**
 
 ```bash
 kubectl get all -n projet-fil-rouge
@@ -338,43 +396,22 @@ kubectl auth can-i get pods --as=system:serviceaccount:projet-fil-rouge:web-sa
 
 **Résultats attendus :**
 
-* L’application fonctionne normalement.
-* Les flux sont limités au namespace et au couple frontend-backend.
-* Les accès sont contrôlés par RBAC et SA.
-* Les secrets ne sont visibles que pour les Pods autorisés.
+* L’application fonctionne.
+* Le flux est limité au couple frontend ↔ backend.
+* Les Secrets sont protégés.
+* Les droits SA sont restreints.
 
 ---
 
 ## **9. Bonnes pratiques de sécurité**
 
-* **Principe du moindre privilège** sur RBAC et ServiceAccounts.
-* **Rotation des certificats et tokens**.
-* **Activation du chiffrement at rest** pour les Secrets.
-* **Audit logging activé** (traçabilité des actions).
-* **Réseau cloisonné** via Network Policies.
-* **Sécurité applicative** (images signées, scans automatiques, CI/CD).
+* Respect du **moindre privilège** (RBAC et SA).
+* **Rotation régulière** des tokens et certificats.
+* **Chiffrement at-rest** des Secrets.
+* **Audit logging activé** et analysé.
+* **Cloisonnement réseau** entre Namespaces.
+* **Images signées et scannées** avant déploiement.
 
----
 
-## **10. Résumé pour diapo**
 
-### 1. Objectifs
-
-* Sécuriser le cluster Kubernetes local.
-* Protéger les identités, secrets et flux réseau.
-* Mettre en place RBAC, SA, TLS et politiques réseau.
-
-### 2. Mécanismes clés
-
-* **RBAC** : contrôle d’accès basé sur les rôles.
-* **ServiceAccount** : identité applicative.
-* **Secrets** : gestion sécurisée des données sensibles.
-* **Network Policies** : isolation du trafic.
-* **TLS / Audit logs** : sécurité du plan de contrôle.
-
-### 3. LAB – Phase 4 du projet fil rouge
-
-* Création d’un **ServiceAccount dédié** et rôle restreint.
-* Ajout d’un **Secret** pour le backend.
-* Définition d’une **NetworkPolicy** limitant les flux frontend → backend.
-* Résultat : cluster **durci, cloisonné et conforme aux bonnes pratiques**.
+Souhaites-tu que je poursuive avec le **Chapitre 6 — DevOps et pipeline CI/CD Kubernetes**, pour prolonger la logique du fil rouge (déploiement sécurisé et automatisé) ?
