@@ -379,3 +379,102 @@ Ce chapitre a permis de :
 
   * **Chapitre 3 :** déploiement et configuration d’applications.
   * **Chapitre 4 :** supervision et administration du cluster.
+
+---
+
+## **8. Intégration du projet fil rouge (fin de chapitre)**
+
+Objectif : poser les bases du dépôt et de l’environnement qui serviront dans tous les chapitres suivants, sans modifier ce qui précède.
+
+### 8.1 Initialiser l’espace de travail
+
+```bash
+# Créer un dossier de travail
+mkdir -p ~/k8s-fil-rouge && cd ~/k8s-fil-rouge
+
+# Initialiser git
+git init
+git config user.name "Votre Nom"
+git config user.email "vous@example.com"
+
+# Arborescence standard
+mkdir -p k8s/base k8s/overlays/dev k8s/overlays/staging k8s/overlays/prod
+mkdir -p apps/frontend apps/backend
+mkdir -p docs scripts
+```
+
+### 8.2 Créer le namespace du fil rouge
+
+```bash
+cat > k8s/base/namespace.yaml <<'YAML'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: projet-fil-rouge
+  labels:
+    project: fil-rouge
+    env: dev
+YAML
+
+kubectl apply -f k8s/base/namespace.yaml
+kubectl get ns projet-fil-rouge --show-labels
+```
+
+### 8.3 Capturer l’état du cluster pour traçabilité
+
+```bash
+kubectl cluster-info > docs/cluster-info.txt
+kubectl version --output=yaml > docs/kubectl-version.yaml
+kubectl get nodes -o wide > docs/nodes.txt
+kubectl -n kube-system get pods -o wide > docs/kube-system-pods.txt
+```
+
+### 8.4 Raccourcis utiles (optionnel)
+
+```bash
+# Alias kubectl
+echo 'alias k=kubectl' >> ~/.bashrc && source ~/.bashrc
+# Contexte par défaut (si plusieurs clusters)
+kubectl config use-context minikube
+```
+
+### 8.5 Makefile minimal pour automatiser
+
+```bash
+cat > Makefile <<'MAKE'
+.PHONY: start stop status ns
+
+start:
+	minikube start --driver=docker --cpus=4 --memory=8192
+
+stop:
+	minikube stop
+
+status:
+	minikube status && kubectl get nodes -o wide
+
+ns:
+	kubectl apply -f k8s/base/namespace.yaml && kubectl get ns projet-fil-rouge
+MAKE
+```
+
+Utilisation :
+
+```bash
+make status
+make ns
+```
+
+### 8.6 Commit et tag de clôture de chapitre
+
+```bash
+git add .
+git commit -m "Ch2: architecture + base fil rouge (namespace, docs, Makefile)"
+git tag -a v0.1-ch2 -m "Fin Chapitre 2 - socle fil rouge"
+```
+
+### 8.7 Prochaine étape (préparation Chapitre 3)
+
+* Conserver ce dépôt comme base.
+* Au **Chapitre 3**, on ajoutera les premiers manifests d’application (Deployment, Service), puis l’Ingress et la configuration.
+* Le namespace `projet-fil-rouge` restera notre cible par défaut.
