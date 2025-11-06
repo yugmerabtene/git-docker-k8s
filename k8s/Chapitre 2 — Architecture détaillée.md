@@ -63,12 +63,12 @@ Points clés :
 * **Rôle** : stocke l’état complet du cluster (objets API sérialisés).
 * **Ports** : 2379 (client API server), 2380 (peer cluster).
 * **Quorum** : nombre impair (3/5). Perte de quorum → **écritures impossibles**.
-* **Maintenance** : compaction, **defrag**, **sauvegardes régulières** (et tests de restauration).
+* **Maintenance** : compaction, **defrag**, **sauvegardes régulières**.
 
-Avec kubeadm :
+Fichiers :
 
-* Manifeste : `/etc/kubernetes/manifests/etcd.yaml`
-* Données : `/var/lib/etcd`
+* `/etc/kubernetes/manifests/etcd.yaml`
+* `/var/lib/etcd`
 
 Commandes :
 
@@ -81,17 +81,12 @@ etcdctl --endpoints=https://127.0.0.1:2379 \
   endpoint health
 ```
 
-Bonnes pratiques :
-
-* 3 nœuds etcd dédiés, **disques rapides**, sauvegardes testées.
-* **TLS partout**, ports 2379/2380 restreints, rotation des certificats.
-
 ---
 
 ### **3.2 kube-apiserver — cœur de Kubernetes**
 
 * **Rôle** : reçoit/valide chaque requête, applique **AuthN → AuthZ → Admission**, lit/écrit dans etcd.
-* **Extensibilité** : **CRDs**, **API Aggregation**.
+* **Extensibilité** : CRDs, API Aggregation.
 * **Audit** : via `--audit-policy-file` et `--audit-log-path`.
 
 Exemples :
@@ -105,31 +100,15 @@ kubectl -n kube-system get pods -l component=kube-apiserver -o wide
 
 ### **3.3 kube-controller-manager — boucles de réconciliation**
 
-* Orchestre les contrôleurs (Deployment → ReplicaSet → Pods, Node, Service, Job…)
+* Orchestre les contrôleurs (Deployment → ReplicaSet → Pods, Node, Service, Job…).
 * **Leader Election** : un actif, les autres en attente.
-
-Diagnostic :
-
-```bash
-kubectl -n kube-system logs -f kube-controller-manager-<node_name>
-kubectl -n kube-system get lease | grep controller
-```
 
 ---
 
 ### **3.4 kube-scheduler — placement des Pods**
 
 * **Rôle** : choisit un nœud pour chaque Pod en `Pending`.
-* **Étapes** :
-
-  * Filtrage → contraintes (`taints`, `affinities`, ressources)
-  * Notation → scores (`spread`, `preemption`)
-
-Vérification :
-
-```bash
-kubectl get events --sort-by=.lastTimestamp | grep -i scheduling
-```
+* **Étapes** : filtrage → notation → binding.
 
 ---
 
@@ -137,8 +116,8 @@ kubectl get events --sort-by=.lastTimestamp | grep -i scheduling
 
 ### **4.1 kubelet — agent du nœud**
 
-* **Rôle** : enregistre le nœud auprès de l’API, gère Pods via CRI.
-* **Diagnostics** :
+* Enregistre le nœud, applique les PodSpecs, gère les probes.
+* Diagnostic :
 
 ```bash
 systemctl status kubelet
@@ -146,60 +125,38 @@ kubectl get nodes -o wide
 kubectl describe node <node_name>
 ```
 
-* **Evictions** : mémoire/disque insuffisants.
-* **Sécurité** : plugin `NodeRestriction` activé.
-
 ---
 
 ### **4.2 Container Runtime — containerd / CRI-O**
 
-* Gère les images, conteneurs et journaux.
+* Gère images, conteneurs, journaux.
 * Outils : `crictl`, `ctr`.
-
-Exemples :
-
-```bash
-crictl ps -a
-crictl images
-```
 
 ---
 
 ### **4.3 CNI — réseau des Pods**
 
-* Attribue IP, configure routes et isolation.
+* Attribue IP, routes, isolation.
 * Plugins : Flannel, Calico, Cilium, Weave.
-
-Diagnostic :
-
-```bash
-kubectl run -it netshoot --image=nicolaka/netshoot --rm --restart=Never -- sh
-```
 
 ---
 
 ### **4.4 kube-proxy — routage des Services**
 
-* Met en place la translation L4.
-* Modes : `iptables` (compat), `ipvs` (performance).
+* Configure la translation L4 (VIP → Endpoints).
+* Modes : `iptables` ou `ipvs`.
 
 ---
 
 ## **5. Sécurité et flux AAA**
 
-Toute requête au `kube-apiserver` passe par 3 étapes :
+Toute requête au `kube-apiserver` passe par :
 
-1. **Authentification (AuthN)** — *Qui ?*
+1. **Authentification (AuthN)** : certificats X.509, tokens JWT, OIDC.
+2. **Autorisation (AuthZ)** : RBAC, Node, Webhook.
+3. **Admission** : plugins (Mutating/Validating).
 
-   * Certificats X.509, tokens JWT, OIDC.
-2. **Autorisation (AuthZ)** — *A-t-il le droit ?*
-
-   * RBAC, Node, Webhook.
-3. **Admission** — *Doit-on autoriser ?*
-
-   * Plugins (Mutating/Validating), ex. **PodSecurity**, **OPA Gatekeeper**.
-
-Vérification :
+Exemple :
 
 ```bash
 kubectl auth can-i get pods --as=system:serviceaccount:default:viewer -n demo
@@ -211,8 +168,7 @@ kubectl auth can-i get pods --as=system:serviceaccount:default:viewer -n demo
 
 ### **Objectif**
 
-Installer un environnement Kubernetes local complet avec Docker + Minikube + kubectl.
-Tester le bon fonctionnement avant de passer au Chapitre 3.
+Installer un environnement Kubernetes local complet : Docker + Minikube + kubectl.
 
 ---
 
@@ -228,11 +184,9 @@ Tester le bon fonctionnement avant de passer au Chapitre 3.
 
 ---
 
-### **6.2 Étapes d’installation**
+### **6.2 Étape 1 — Installer Docker**
 
-#### **Étape 1 — Installer Docker**
-
-**Sous Linux :**
+#### **Sous Linux**
 
 ```bash
 sudo apt update && sudo apt upgrade -y
@@ -247,9 +201,9 @@ sudo systemctl enable docker && sudo systemctl start docker
 docker --version
 ```
 
-**Sous Windows :**
+#### **Sous Windows**
 
-Télécharger **Docker Desktop** → installer → activer **WSL2** → vérifier avec :
+Télécharger **Docker Desktop**, installer, activer **WSL2**, vérifier :
 
 ```powershell
 docker version
@@ -257,9 +211,84 @@ docker version
 
 ---
 
-#### **Étape 2 — Installer kubectl**
+### ⚠️ **Dépannage Docker/Minikube – Permissions et erreurs courantes**
 
-**Linux :**
+Les utilisateurs Linux peuvent rencontrer ces erreurs :
+
+#### **1️⃣ Erreur :**
+
+```
+DRV_AS_ROOT : Le pilote "docker" ne doit pas être utilisé avec les privilèges root.
+```
+
+**Cause** : tu as lancé Minikube avec `sudo`.
+**Solution** : exécute `minikube start` en tant qu’utilisateur normal (non root).
+
+---
+
+#### **2️⃣ Erreur :**
+
+```
+permission denied while trying to connect to the Docker daemon socket
+```
+
+**Cause** : ton utilisateur n’a pas accès au daemon Docker.
+**Solution :**
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+Puis :
+
+```bash
+docker ps
+minikube start --driver=docker
+```
+
+---
+
+#### **3️⃣ Erreur :**
+
+```
+PROVIDER_DOCKER_NEWGRP : permission denied while trying to connect to the Docker daemon socket
+```
+
+**Cause** : la modification de groupe n’est pas prise en compte.
+**Solution** : déconnecte-toi ou exécute `newgrp docker` avant de relancer Minikube.
+
+---
+
+#### **4️⃣ Erreur :**
+
+```
+DRV_NOT_HEALTHY : aucun pilote en fonctionnement
+```
+
+**Cause** : Docker n’est pas actif.
+**Solution :**
+
+```bash
+sudo systemctl restart docker
+minikube delete --all
+minikube start --driver=docker
+```
+
+---
+
+Une fois ces correctifs appliqués, vérifie :
+
+```bash
+minikube status
+kubectl get nodes
+```
+
+---
+
+### **6.3 Étape 2 — Installer kubectl**
+
+#### **Sous Linux**
 
 ```bash
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -267,7 +296,7 @@ chmod +x kubectl && sudo mv kubectl /usr/local/bin/
 kubectl version --client
 ```
 
-**Windows :**
+#### **Sous Windows**
 
 ```powershell
 choco install kubernetes-cli -y
@@ -276,7 +305,7 @@ kubectl version --client
 
 ---
 
-#### **Étape 3 — Installer Minikube**
+### **6.4 Étape 3 — Installer Minikube**
 
 **Linux :**
 
@@ -293,7 +322,7 @@ choco install minikube -y
 
 ---
 
-#### **Étape 4 — Démarrer le cluster**
+### **6.5 Étape 4 — Démarrer le cluster**
 
 ```bash
 minikube start --driver=docker --cpus=4 --memory=8192
@@ -309,7 +338,7 @@ kubectl get nodes -o wide
 
 ---
 
-#### **Étape 5 — Premier Pod de test**
+### **6.6 Étape 5 — Premier Pod de test**
 
 ```bash
 kubectl run nginx-demo --image=nginx --port=80
@@ -319,7 +348,7 @@ kubectl logs nginx-demo
 
 ---
 
-#### **Étape 6 — Nettoyage**
+### **6.7 Étape 6 — Nettoyage**
 
 ```bash
 kubectl delete pod nginx-demo
@@ -328,129 +357,25 @@ minikube stop
 
 ---
 
-### **6.3 Validation du TP**
+### **6.8 Validation du TP**
 
-| Vérification  | Commande                          | Résultat attendu   |
-| ------------- | --------------------------------- | ------------------ |
-| Cluster actif | `kubectl get nodes`               | Ready              |
-| kube-system   | `kubectl -n kube-system get pods` | Running            |
-| Pod nginx     | `kubectl get pods`                | Running            |
-| Logs nginx    | `kubectl logs nginx-demo`         | Logs HTTP visibles |
-
----
-
-## **7. Dépannage Minikube — erreurs fréquentes**
-
-### **Problème :**
-
-```
-X Fermeture en raison de DRV_AS_ROOT : Le pilote "docker" ne doit pas être utilisé avec les privilèges root.
-```
-
-### **Cause :**
-
-Le driver Docker ne supporte pas `sudo`.
-Tu dois exécuter Minikube avec ton utilisateur normal.
+| Vérification  | Commande                          | Résultat attendu |
+| ------------- | --------------------------------- | ---------------- |
+| Cluster actif | `kubectl get nodes`               | Ready            |
+| kube-system   | `kubectl -n kube-system get pods` | Running          |
+| Pod nginx     | `kubectl get pods`                | Running          |
+| Logs nginx    | `kubectl logs nginx-demo`         | Logs HTTP        |
 
 ---
 
-### **Problème :**
-
-```
-permission denied while trying to connect to the Docker daemon socket
-```
-
-### **Cause :**
-
-Ton utilisateur n’a pas accès au daemon Docker.
-
-### **Solution :**
-
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-Puis vérifier :
-
-```bash
-docker ps
-```
-
-et relancer :
-
-```bash
-minikube start --driver=docker
-```
-
----
-
-### **Problème :**
-
-```
-PROVIDER_DOCKER_NEWGRP : permission denied while trying to connect to the Docker daemon socket
-```
-
-### **Cause :**
-
-Tu as ajouté ton utilisateur au groupe docker mais la session n’a pas été rechargée.
-
-### **Solution :**
-
-Ferme ta session, reconnecte-toi, ou exécute `newgrp docker` avant de relancer `minikube`.
-
----
-
-### **Problème :**
-
-```
-DRV_NOT_HEALTHY : aucun pilote en fonctionnement
-```
-
-### **Cause :**
-
-Docker n’est pas actif.
-
-### **Solution :**
-
-Redémarre Docker :
-
-```bash
-sudo systemctl restart docker
-```
-
-Puis relance :
-
-```bash
-minikube delete --all
-minikube start --driver=docker
-```
-
----
-
-### **Vérifications finales**
-
-```bash
-minikube status
-kubectl get nodes
-```
-
-Sortie attendue :
-
-```
-minikube   Ready    control-plane   2m    v1.30.0
-```
-
----
-
-## **8. Conclusion**
+## **7. Conclusion**
 
 Ce chapitre a permis de :
 
-* Comprendre l’**architecture interne de Kubernetes** (Control Plane + Nœuds).
-* Installer un **cluster local fonctionnel** (Docker + Minikube).
-* Diagnostiquer les problèmes courants liés aux permissions Docker.
-* Préparer la suite du **projet fil rouge** :
+* Comprendre l’**architecture interne de Kubernetes**.
+* Installer un **cluster local fonctionnel**.
+* Corriger les **erreurs courantes de permissions Docker/Minikube**.
+* Préparer la suite du projet fil rouge :
 
   * **Chapitre 3 :** déploiement et configuration d’applications.
   * **Chapitre 4 :** supervision et administration du cluster.
