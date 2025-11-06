@@ -1,10 +1,10 @@
-# Chapitre 3 — Installation et configuration de Kubernetes
+# **Chapitre 3 — Installation et configuration de Kubernetes**
 
 *(Outils, manifests YAML, déploiement d’applications, gestion des ressources)*
 
 ---
 
-## 1. Objectifs d’apprentissage
+## **1. Objectifs d’apprentissage**
 
 À la fin de ce chapitre, l’apprenant sera capable de :
 
@@ -16,67 +16,82 @@
 
 ---
 
-## 2. Présentation des différentes solutions d’installation
+## **2. Présentation des différentes solutions d’installation**
 
-Kubernetes peut être installé de plusieurs manières selon le contexte :
-
-### 2.1 Environnement local (développement)
+### **2.1 Environnement local (développement)**
 
 * **Minikube** : cluster à nœud unique, léger, parfait pour l’apprentissage.
 * **Kind (Kubernetes in Docker)** : exécute un cluster Kubernetes dans des conteneurs Docker.
 * **MicroK8s** : distribution légère développée par Canonical (Ubuntu).
 
-### 2.2 Environnement sur site (on-premise)
-
-* **kubeadm** : outil officiel pour installer un cluster “from scratch”.
-* **Rancher** : interface graphique complète pour clusters multi-nœuds.
-* **OpenShift** : distribution commerciale de Red Hat basée sur Kubernetes.
-
-### 2.3 Environnements Cloud (managés)
-
-* **EKS (AWS)**, **AKS (Azure)**, **GKE (Google Cloud)** : infrastructure et plan de contrôle gérés automatiquement.
-* Ces solutions sont prêtes à l’emploi mais souvent payantes.
+Ces environnements sont utilisés pour les tests et la formation sans nécessiter d’infrastructure réelle.
 
 ---
 
-## 3. Installation des outils de base
+### **2.2 Environnement sur site (on-premise)**
 
-*(Si vous avez déjà terminé le TP du Chapitre 2, votre environnement est prêt. Sinon, voici la procédure complète pour installation de zéro.)*
+* **kubeadm** : outil officiel pour construire un cluster complet à partir de zéro.
+* **Rancher** : interface graphique de gestion multi-clusters.
+* **OpenShift** : distribution d’entreprise basée sur Kubernetes (Red Hat).
 
-### 3.1 Docker
+Ces solutions sont destinées aux serveurs physiques ou virtuels internes à une organisation.
 
-*(Même installation que Chapitre 2, section Docker, à répéter si besoin.)*
-Docker sert de **runtime de conteneur** utilisé par Minikube ou Kind.
+---
 
-### 3.2 kubectl
+### **2.3 Environnements Cloud (managés)**
 
-* Client en ligne de commande pour communiquer avec le cluster.
-* Fonctionne en HTTPS via **API Server**.
+* **EKS (AWS)**, **AKS (Azure)**, **GKE (Google Cloud)** : les fournisseurs gèrent le Control Plane et l’infrastructure.
+* Ces solutions sont prêtes à l’emploi mais facturées à l’usage.
 
-Vérifiez la configuration :
+---
+
+## **3. Installation des outils de base**
+
+(Si vous avez déjà terminé le TP du Chapitre 2, votre environnement est prêt. Sinon, reprenez ces étapes.)
+
+---
+
+### **3.1 Docker**
+
+Docker est le moteur de conteneurs utilisé par Kubernetes pour exécuter les Pods localement.
+
+(Se référer au Chapitre 2 pour l’installation détaillée.)
+
+---
+
+### **3.2 kubectl**
 
 ```bash
 kubectl config view
 kubectl cluster-info
 ```
 
-### 3.3 Minikube
+**Contexte :**
+Ces deux commandes permettent de vérifier la configuration de votre client :
 
-Si vous souhaitez recréer un environnement propre :
+* `kubectl config view` affiche le contenu du fichier `~/.kube/config`, qui contient les informations d’accès au cluster.
+* `kubectl cluster-info` affiche les adresses de l’API Server et des services système.
+
+---
+
+### **3.3 Minikube**
 
 ```bash
 minikube delete
 minikube start --driver=docker --cpus=4 --memory=8192
 ```
 
+**Contexte :**
+
+* `minikube delete` supprime tout ancien cluster local.
+* `minikube start` crée un nouveau cluster dans Docker, avec 4 vCPU et 8 Go de RAM.
+  Cette configuration est adaptée à la plupart des postes de développement.
+
 ---
 
-## 4. Configuration et manipulation de base
+## **4. Configuration et manipulation de base**
 
-### 4.1 Syntaxe YAML
-
-Kubernetes utilise des **fichiers YAML** pour décrire l’état souhaité du système.
-Structure de base :
+### **4.1 Syntaxe YAML**
 
 ```yaml
 apiVersion: v1
@@ -91,45 +106,52 @@ spec:
     - containerPort: 80
 ```
 
-Explication :
+**Contexte :**
+Ce fichier YAML décrit un Pod exécutant un conteneur `nginx`.
+Chaque ressource Kubernetes suit cette même structure :
 
-* **apiVersion** : version de l’API (ex. `v1`, `apps/v1`).
-* **kind** : type d’objet (Pod, Service, Deployment…).
-* **metadata** : nom, labels, namespace.
-* **spec** : définition fonctionnelle (conteneurs, volumes, ports…).
+1. `apiVersion` indique la version de l’API utilisée.
+2. `kind` définit le type d’objet (Pod, Service, Deployment…).
+3. `metadata` contient les informations d’identification (nom, labels, namespace).
+4. `spec` décrit le comportement attendu (conteneurs, ports, volumes…).
 
 ---
 
-### 4.2 Les principaux objets Kubernetes
+### **4.2 Les principaux objets Kubernetes**
 
 | Objet                           | Description                                                      |
 | ------------------------------- | ---------------------------------------------------------------- |
-| **Pod**                         | Unité minimale d’exécution contenant un ou plusieurs conteneurs. |
-| **Deployment**                  | Gère les Pods, permet les mises à jour continues et le scaling.  |
-| **Service**                     | Expose des Pods sur le réseau interne ou externe.                |
-| **ConfigMap / Secret**          | Stockage de configuration et d’informations sensibles.           |
-| **PersistentVolumeClaim (PVC)** | Réservation de stockage persistant.                              |
+| **Pod**                         | Exécute un ou plusieurs conteneurs.                              |
+| **Deployment**                  | Supervise la création, la mise à jour et la redondance des Pods. |
+| **Service**                     | Expose les Pods via une IP stable.                               |
+| **ConfigMap / Secret**          | Contiennent des paramètres ou des données sensibles.             |
+| **PVC (PersistentVolumeClaim)** | Réserve du stockage persistant.                                  |
+
+**Contexte :**
+Ces objets interagissent ensemble : un Deployment crée des Pods, un Service les expose et un Ingress permet d’y accéder depuis un navigateur ou une API externe.
 
 ---
 
-### 4.3 Commandes `kubectl` essentielles
+### **4.3 Commandes `kubectl` essentielles**
 
-| Action             | Commande                         |
-| ------------------ | -------------------------------- |
-| Créer un objet     | `kubectl apply -f fichier.yaml`  |
-| Supprimer un objet | `kubectl delete -f fichier.yaml` |
-| Lister les objets  | `kubectl get pods,svc,deploy -A` |
-| Inspecter un objet | `kubectl describe pod <nom>`     |
-| Voir les logs      | `kubectl logs <nom>`             |
-| Accéder à un Pod   | `kubectl exec -it <nom> -- bash` |
+```bash
+kubectl apply -f fichier.yaml      # Crée ou met à jour un objet
+kubectl delete -f fichier.yaml     # Supprime l’objet décrit dans le YAML
+kubectl get pods,svc,deploy -A     # Liste Pods, Services et Deployments dans tous les namespaces
+kubectl describe pod <nom>         # Détaille un objet spécifique
+kubectl logs <nom>                 # Affiche les journaux d’un conteneur
+kubectl exec -it <nom> -- bash     # Ouvre un shell interactif dans un conteneur
+```
+
+**Contexte :**
+Ces commandes constituent la base de l’administration quotidienne de Kubernetes.
+Elles permettent de créer, inspecter, mettre à jour et dépanner des ressources à partir de fichiers YAML.
 
 ---
 
-## 5. Gestion des ressources
+## **5. Gestion des ressources**
 
-### 5.1 Allocation CPU et mémoire
-
-Exemple dans un conteneur :
+### **5.1 Allocation CPU et mémoire**
 
 ```yaml
 resources:
@@ -141,47 +163,33 @@ resources:
     memory: "512Mi"
 ```
 
-* **requests** : ressources minimales nécessaires.
-* **limits** : ressources maximales autorisées.
-* Kubernetes planifie les Pods en fonction des *requests* pour éviter la saturation.
+**Contexte :**
+Chaque conteneur déclare :
 
-### 5.2 Gestion du stockage
-
-Les volumes peuvent être :
-
-* **éphémères** : supprimés avec le Pod.
-* **persistants (PV/PVC)** : conservés entre les redémarrages.
+* des *requests* (ressources garanties, nécessaires au démarrage)
+* des *limits* (maximum autorisé)
+  Kubernetes planifie les Pods sur les nœuds en tenant compte de ces contraintes pour éviter la surcharge.
 
 ---
 
-## 6. **TP – Projet Fil Rouge (Phase 2)**
+### **5.2 Gestion du stockage**
 
-### Déploiement complet d’une application web (frontend + backend simulé)
+* **Éphémère** : supprimé avec le Pod (utile pour le cache).
+* **Persistant** : stocké via PV/PVC (bases de données, logs, fichiers permanents).
 
----
-
-### 6.1 Objectif
-
-Poursuivre le projet du Chapitre 2 :
-
-* Déployer une application composée de deux services :
-
-  1. **Frontend (Nginx)** simulant l’interface utilisateur.
-  2. **Backend (API simulée avec httpd)**.
-* Connecter les deux à l’aide de Services internes.
-* Exposer le frontend via un **Ingress HTTP** local.
+**Contexte :**
+La persistance des données est cruciale pour les applications d’entreprise.
+Les volumes éphémères servent surtout pour le cache ou les fichiers temporaires.
 
 ---
 
-### 6.2 Prérequis
+## **6. TP – Projet Fil Rouge (Phase 2)**
 
-* Avoir le cluster Minikube fonctionnel (Chapitre 2).
-* Docker, kubectl et Minikube opérationnels.
-* Avoir 8 Go de RAM et 4 vCPU libres minimum.
+### **Déploiement d’une application web (frontend + backend simulé)**
 
 ---
 
-### 6.3 Étape 1 — Vérification du cluster
+### **6.1 Vérification du cluster**
 
 ```bash
 minikube start --driver=docker
@@ -189,20 +197,26 @@ kubectl get nodes -o wide
 kubectl get pods -A
 ```
 
+**Contexte :**
+Ces commandes assurent que le cluster est bien opérationnel :
+le nœud `minikube` doit être dans l’état **Ready**, et les pods système doivent s’afficher en cours d’exécution.
+
 ---
 
-### 6.4 Étape 2 — Créer un namespace dédié au projet (si ce n'est pas déja fait au chapitre-01)
+### **6.2 Créer un namespace dédié**
 
 ```bash
 kubectl create namespace projet-fil-rouge
 kubectl config set-context --current --namespace=projet-fil-rouge
 ```
 
+**Contexte :**
+Les namespaces permettent d’isoler les projets et d’éviter les conflits de noms.
+Le contexte est mis à jour pour que `kubectl` exécute toutes les commandes dans ce namespace par défaut.
+
 ---
 
-### 6.5 Étape 3 — Créer le backend (API simulée)
-
-Créer le fichier `backend.yaml` :
+### **6.3 Créer le backend (API simulée)**
 
 ```yaml
 apiVersion: apps/v1
@@ -237,18 +251,18 @@ spec:
     targetPort: 80
 ```
 
-Appliquer :
-
 ```bash
 kubectl apply -f backend.yaml
 kubectl get pods,svc
 ```
 
+**Contexte :**
+Ce backend simule une API à l’aide d’un serveur Apache HTTPD.
+Le Service associé permet aux autres Pods (comme le frontend) d’y accéder via son nom DNS interne `backend`.
+
 ---
 
-### 6.6 Étape 4 — Créer le frontend (Nginx)
-
-Créer le fichier `frontend.yaml` :
+### **6.4 Créer le frontend (Nginx)**
 
 ```yaml
 apiVersion: apps/v1
@@ -287,23 +301,31 @@ spec:
   type: NodePort
 ```
 
-Appliquer :
-
 ```bash
 kubectl apply -f frontend.yaml
 ```
 
+**Contexte :**
+Le frontend affiche l’interface utilisateur.
+Le Service de type `NodePort` rend l’application accessible depuis la machine hôte via un port réseau spécifique.
+La variable `BACKEND_URL` permettra de pointer vers le backend HTTPD.
+
 ---
 
-### 6.7 Étape 5 — Exposer le frontend avec Ingress
+### **6.5 Exposer le frontend via Ingress**
 
-Activer Ingress :
+#### 1. Activer le module Ingress
 
 ```bash
 minikube addons enable ingress
 ```
 
-Créer `ingress.yaml` :
+**Contexte :**
+Le module Ingress intégré à Minikube active le contrôleur NGINX, qui joue le rôle de proxy HTTP pour router les requêtes.
+
+---
+
+#### 2. Créer le fichier `ingress.yaml`
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -324,22 +346,45 @@ spec:
               number: 80
 ```
 
-Appliquer :
-
 ```bash
 kubectl apply -f ingress.yaml
 ```
 
-Tester :
+**Contexte :**
+Cet Ingress redirige toutes les requêtes HTTP arrivant sur le domaine `local.dev` vers le Service `frontend`.
+C’est le point d’entrée unique de l’application côté client.
+
+---
+
+#### 3. Configurer le nom de domaine local
+
+```bash
+echo "$(minikube ip) local.dev" | sudo tee -a /etc/hosts
+cat /etc/hosts | grep local.dev
+```
+
+**Contexte :**
+Cette commande ajoute le nom `local.dev` au fichier `/etc/hosts` en le liant à l’adresse IP de Minikube.
+Cela permet d’accéder à l’application via `http://local.dev` dans le navigateur.
+
+---
+
+#### 4. Tester l’accès via Ingress
 
 ```bash
 minikube tunnel
 curl -I http://local.dev
 ```
 
+**Contexte :**
+
+* `minikube tunnel` crée un pont réseau pour exposer les Services et Ingress en dehors du cluster.
+* `curl -I` vérifie la réponse HTTP.
+  Si le déploiement est correct, la réponse doit contenir `HTTP/1.1 200 OK`.
+
 ---
 
-### 6.8 Étape 6 — Vérification du déploiement
+### **6.6 Vérifier le déploiement complet**
 
 ```bash
 kubectl get all -n projet-fil-rouge
@@ -348,46 +393,22 @@ kubectl logs -l app=frontend
 kubectl logs -l app=backend
 ```
 
-**Résultat attendu :**
+**Contexte :**
+Ces commandes permettent de s’assurer que tout fonctionne :
 
-* Les deux Pods sont en statut **Running**.
-* L’Ingress répond sur `http://local.dev`.
-* Les logs du backend montrent les requêtes du frontend.
+* Les Pods et Services sont actifs.
+* L’Ingress est bien configuré.
+* Les logs montrent la communication entre frontend et backend.
 
 ---
 
-### 6.9 Étape 7 — Nettoyage (facultatif)
+### **6.7 Nettoyage (facultatif)**
 
 ```bash
 kubectl delete namespace projet-fil-rouge
 ```
 
----
+**Contexte :**
+Supprime toutes les ressources du projet et libère la mémoire de ton cluster Minikube.
 
-## 7. Résumé pour diapo
-
-### 1️⃣ Objectifs
-
-* Installer et configurer un cluster Kubernetes complet.
-* Créer et appliquer des **manifests YAML**.
-* Déployer une **application web complète**.
-
-### 2️ Outils
-
-* Docker, Minikube, kubectl.
-* API Server, Controller, Scheduler.
-* YAML pour la configuration déclarative.
-
-### 3️ Concepts clés
-
-* **Pod, Deployment, Service, Ingress**.
-* **requests/limits** pour la gestion des ressources.
-* Configuration centralisée via **namespaces**.
-
-### 4️ TP Fil Rouge – Phase 2
-
-* Création d’un **namespace dédié**.
-* Déploiement d’un **frontend Nginx** et d’un **backend HTTPD**.
-* Exposition du frontend via un **Ingress HTTP local**.
-* Résultat : **application web fonctionnelle** sur `http://local.dev`.
 
