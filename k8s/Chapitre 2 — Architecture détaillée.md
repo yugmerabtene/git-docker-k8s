@@ -18,25 +18,222 @@
 
 ## 2. Vue d’ensemble de l’architecture Kubernetes
 
-*(Section identique à la version précédente, conservée intégralement pour cohérence de cours)*
+Kubernetes est une plateforme **distribuée** composée de deux ensembles logiques :
+
+1. **Le Control Plane**
+   Regroupe les composants responsables de l’**API**, du **stockage d’état**, de la **réconciliation** et de l’**ordonnancement** :
+
+   * **kube-apiserver** : point d’entrée unique. Valide les requêtes, applique AuthN/AuthZ/Admission, et persiste/lecture l’état.
+   * **etcd** : base **clé/valeur** distribuée (consensus **Raft**) stockant l’état source de vérité.
+   * **kube-controller-manager** : exécute des **boucles de contrôle** assurant la convergence vers l’état souhaité (Deployments, Nodes, Jobs, GC…).
+   * **kube-scheduler** : **assigne** chaque Pod en attente à un nœud selon ressources/contraintes.
+
+2. **Les Nœuds (Workers)**
+   Exécutent les **Pods** et hébergent :
+
+   * **kubelet** : agent local qui reçoit les ordres du Control Plane et orchestre les conteneurs.
+   * **Container Runtime** (via **CRI**, ex. containerd/CRI-O) : crée/détruit les conteneurs.
+   * **kube-proxy** : programme les règles **L4** (iptables/IPVS) pour la translation des Services.
+   * **CNI** : plugin réseau (Calico/Cilium/Flannel/Weave) qui attache des interfaces et attribue des IP aux Pods.
+
+### Flux internes (schéma mental)
+
+```
+[kubectl/clients] → (TLS, AuthN/AuthZ/Admission) → [kube-apiserver] ↔ [etcd]
+                                        │                  ▲   watch
+                              controllers/scheduler  ──────┘
+                                        │
+                                    [kubelet] → (CRI) → [runtime] → containers
+                                        │
+                                       (CNI) réseau Pod↔Pod, (kube-proxy) Services
+```
+
+Points clés :
+
+* **Modèle déclaratif** : on publie un état souhaité (YAML). Les contrôleurs assurent la convergence.
+* **Découplage fort** : API centrale, nœuds remplaçables, Pods éphémères.
+* **Observabilité** : tout passe par l’API → **events**, **logs** et **metrics** accessibles.
 
 ---
 
 ## 3. Control Plane : les composants principaux
 
-*(Section identique à la version précédente, détaillant etcd, kube-apiserver, controller-manager, scheduler.)*
+### 3.1 etcd — base clé/valeur (consensus Raft)
+
+* **Rôle** : stocke l’état complet du cluster (objets API sérialisés).
+* **Ports** : 2379 (client API server), 2380 (peer cluster).
+* **Quorum** : nombre impair (3/5). Perte de quorum → **écritures impossibles**.
+* **Maintenance** : compaction, **defrag**, **sauvegardes régulières** (et tests de restauration).
+
+Avec kubeadm (emplacements usuels) :
+
+* Manifeste statique : `/etc/kubernetes/manifests/etcd.yaml`
+* Données : `/var/lib/etcd`
+
+Commandes typiques (sur un nœud control-plane) :
+
+```bash
+export ETCDCTL_API=3
+etcdctl --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  endpoint health
+
+etcdctl --endpoints=https://127.0.0.1:2379 ... member list
+etcdctl --endpoints=https://127.0.0.1:2379 ... snapshot save /root/etcd-$(date +%F-%H%M).db
+etcdctl snapshot status /root/etcd-*.db
+```
+
+Bonnes pratiques :
+
+* 3 nœuds etcd dédiés (ou etcd managé), disques rapides, **sauvegardes testées**.
+* Sécurité : **TLS partout**, accès ports 2379/2380 restreints, rotation de certificats.
+
+### 3.2 kube-apiserver — front-door et cœur de l’API
+
+* **Rôle** : reçoit/valide chaque requête, applique **AuthN → AuthZ → Admission**, lit/écrit dans etcd, diffuse via **watch**.
+* **Extensibilité** : **CRDs** (nouvelles ressources), **API Aggregation**.
+
+Inspection :
+
+```bash
+kubectl cluster-info
+kubectl -n kube-system get pods -l component=kube-apiserver -o wide
+kubectl -n kube-system logs -f kube-apiserver-<node_name>
+```
+
+Paramètres à connaître (selon déploiement) :
+
+* `--authorization-mode=Node,RBAC`
+* `--enable-admission-plugins=PodSecurity,NodeRestriction,...`
+* `--audit-policy-file`, `--audit-log-path`
+* TLS obligatoire (pas de port HTTP ouvert)
+
+### 3.3 kube-controller-manager — boucles de réconciliation
+
+* **Rôle** : orchestre les contrôleurs natifs (Deployment→ReplicaSet→Pods, Node, Service, Job, CronJob, Namespace GC, CSR…).
+* **Leader Election** : un actif, les autres en attente (évite double exécution).
+
+Inspection :
+
+```bash
+kubectl -n kube-system get pods -l component=kube-controller-manager -o wide
+kubectl -n kube-system logs -f kube-controller-manager-<node_name>
+kubectl -n kube-system get lease | grep controller
+kubectl -n kube-system describe lease kube-controller-manager
+```
+
+### 3.4 kube-scheduler — placement des Pods
+
+* **Rôle** : choisit un **nœud** pour chaque Pod en **Pending**.
+* **Processus** : **filtrage** (taints/tolerations, ressources, affinities) → **notation** (préférences, spread) → **binding**.
+* **Fonctionnalités** : affinities, `topologySpreadConstraints`, **priorités & préemption**.
+
+Inspection :
+
+```bash
+kubectl -n kube-system get pods -l component=kube-scheduler -o wide
+kubectl -n kube-system logs -f kube-scheduler-<node_name>
+kubectl get events --sort-by=.lastTimestamp | egrep -i "Scheduled|FailedScheduling" | tail
+```
 
 ---
 
 ## 4. Nœuds et exécution des conteneurs
 
-*(Section identique à la version précédente, détaillant kubelet, runtime, CNI, kube-proxy.)*
+### 4.1 kubelet — agent du nœud
+
+* **Rôle** : enregistre le nœud auprès de l’API, applique les PodSpecs via **CRI**, publie l’état (`NodeStatus`), gère **cgroups** et **probes**.
+* **Fichiers** : `/var/lib/kubelet/config.yaml`, certificats bootstrap `/var/lib/kubelet/pki/`.
+
+Diagnostics :
+
+```bash
+systemctl status kubelet
+journalctl -u kubelet -f
+kubectl get nodes -o wide
+kubectl describe node <node_name>     # capacity, allocatable, conditions, taints
+```
+
+Points d’attention :
+
+* **Evictions** : mémoire/disque (ex. `--eviction-hard=memory.available<500Mi,...`).
+* Sécurité : **NodeRestriction** activé, `readOnlyPort` désactivé.
+
+### 4.2 Container Runtime via CRI — containerd / CRI-O
+
+* **Rôle** : cycle de vie des conteneurs, images, logs, cgroups.
+* **Outils** : `crictl` (client CRI), `ctr` (bas niveau containerd).
+
+Exemples :
+
+```bash
+crictl info
+crictl ps -a
+crictl images
+crictl logs <container_id>
+crictl inspectp <pod_sandbox_id>
+```
+
+**RuntimeClass** : sélectionner un runtime alternatif (gVisor/Kata) par Pod.
+
+### 4.3 CNI — réseau des Pods
+
+* **Rôle** : rattacher une interface, attribuer IP **Pod CIDR**, configurer routes.
+* **Plugins** : Flannel, Calico, Cilium (eBPF), Weave.
+* **Pièges** : **MTU** (VXLAN), routes manquantes, conflits CIDR.
+
+Debug :
+
+```bash
+ip a
+ip route
+kubectl run -it netshoot --image=nicolaka/netshoot --rm --restart=Never -- sh
+# Dans le Pod :
+curl -I http://kubernetes.default.svc
+```
+
+### 4.4 kube-proxy — Services (iptables/IPVS)
+
+* **Rôle** : programme la translation L4 pour les Services (VIP → Endpoints).
+* **Modes** : `iptables` (compat) ou `ipvs` (perf). Cilium peut remplacer kube-proxy (eBPF).
+
+Inspection :
+
+```bash
+kubectl -n kube-system get ds kube-proxy -o wide
+kubectl -n kube-system logs -f ds/kube-proxy
+iptables -S | grep KUBE- | head
+# si IPVS
+ipvsadm -ln | head
+```
 
 ---
 
 ## 5. Sécurité et flux AAA
 
-*(Section identique à la version précédente.)*
+La **chaîne AAA** (Authentication → Authorization → Admission) s’applique à **toute requête** au `kube-apiserver`.
+
+1. **Authentification (AuthN)** — *Qui ?*
+   Certificats **X.509**, Tokens (ServiceAccount/JWT), **OIDC**, Webhook.
+
+2. **Autorisation (AuthZ)** — *A-t-il le droit ?*
+   **RBAC** (recommandé), Node, Webhook (ABAC à proscrire en prod).
+
+3. **Admission** — *Doit-on l’autoriser / modifier ?*
+   **Mutating/Validating Admission** (plugins intégrés, ex. **PodSecurity**, **NodeRestriction**) ou webhooks externes (**OPA Gatekeeper**, **Kyverno**).
+
+Vérifier un droit :
+
+```bash
+kubectl auth can-i get pods --as=system:serviceaccount:default:viewer -n demo
+```
+
+Audit et chiffrement :
+
+* **Audit logs** via `--audit-policy-file`, `--audit-log-path` sur l’API server.
+* **Chiffrement at-rest** des **Secrets** via `--encryption-provider-config`.
 
 ---
 
